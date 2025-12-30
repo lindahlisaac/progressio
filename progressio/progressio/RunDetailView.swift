@@ -12,6 +12,7 @@ struct RunDetailView: View {
     @State private var seconds: Int
     @State private var avgHR: String
     @State private var isCompleted: Bool
+    @State private var category: RunCategory = .easy
     @Environment(\.dismiss) private var dismiss
 
     init(session: PlannedSession, onSave: ((RunDetailData, PlanStatus) -> Void)? = nil) {
@@ -31,6 +32,7 @@ struct RunDetailView: View {
         _seconds = State(initialValue: s)
         _avgHR = State(initialValue: detail?.averageHR ?? "")
         _isCompleted = State(initialValue: session.status == .completed)
+        _category = State(initialValue: detail?.category ?? .easy)
     }
 
     var body: some View {
@@ -39,6 +41,11 @@ struct RunDetailView: View {
                 TextField("Title", text: $title)
                 TextField("Notes", text: $notes, axis: .vertical)
                     .lineLimit(3, reservesSpace: true)
+                Picker("Run type", selection: $category) {
+                    ForEach(RunCategory.allCases) { cat in
+                        Text(cat.rawValue).tag(cat)
+                    }
+                }
             }
 
             Section("Metrics") {
@@ -75,7 +82,7 @@ struct RunDetailView: View {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") {
                     let durationString = String(format: "%02d:%02d:%02d", hours, minutes, seconds)
-                    let detail = RunDetailData(title: title, notes: notes, distance: distance, duration: durationString, averageHR: avgHR)
+                    let detail = RunDetailData(title: title, notes: notes, distance: distance, duration: durationString, averageHR: avgHR, category: category)
                     onSave?(detail, isCompleted ? .completed : .planned)
                     dismiss()
                 }

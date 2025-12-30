@@ -1,3 +1,13 @@
+enum RunCategory: String, CaseIterable, Codable, Identifiable {
+    case easy = "Easy"
+    case recovery = "Recovery"
+    case tempo = "Tempo"
+    case threshold = "Threshold"
+    case vo2 = "VO2"
+    case race = "Race"
+
+    var id: String { rawValue }
+}
 import SwiftUI
 import Combine
 
@@ -35,6 +45,7 @@ struct RunDetailData: Codable, Equatable {
     var distance: String
     var duration: String
     var averageHR: String
+    var category: RunCategory?
 }
 
 struct PlannedSession: Identifiable, Codable {
@@ -159,7 +170,7 @@ final class TemplateLibraryViewModel: ObservableObject {
         }
     }
 
-    func addTemplate(name: String, note: String?, category: TemplateCategory, exercises: [StrengthExercise]) {
+    func addTemplate(name: String, note: String?, category: TemplateCategory, exercises: [StrengthExercise], runCategory: RunCategory? = nil) {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else { return }
 
@@ -171,7 +182,10 @@ final class TemplateLibraryViewModel: ObservableObject {
             cleanedNote = nil
         }
 
-        let newTemplate = StrengthTemplate(name: trimmedName, category: category, exercises: exercises, note: cleanedNote)
+        var newTemplate = StrengthTemplate(name: trimmedName, category: category, exercises: exercises, note: cleanedNote)
+        if category == .run, let runCategory {
+            newTemplate.note = [cleanedNote, "Type: \(runCategory.rawValue)"].compactMap { $0 }.joined(separator: " • ")
+        }
         templates.append(newTemplate)
         persistTemplates()
     }
@@ -479,6 +493,21 @@ struct WeekPlannerView: View {
 
     var body: some View {
         List {
+            Section("Run Mileage") {
+                HStack {
+                    Label("Completed", systemImage: "checkmark.circle")
+                    Spacer()
+                    Text(String(format: "%.1f mi", completedRunMiles))
+                        .bold()
+                }
+                HStack {
+                    Label("Planned", systemImage: "figure.run")
+                    Spacer()
+                    Text(String(format: "%.1f mi", plannedRunMiles))
+                        .bold()
+                }
+            }
+
             ForEach(viewModel.weekPlan.days) { day in
                 Section(header: Text(dayHeader(for: day.date))) {
                     if day.sessions.isEmpty {
@@ -575,6 +604,30 @@ struct WeekPlannerView: View {
         let short = shortDayFormatter.string(from: date)
         return "\(short) • \(dayString)"
     }
+
+    private var plannedRunMiles: Double {
+        let sessions = viewModel.weekPlan.days.flatMap { $0.sessions }
+        let runs = sessions.filter { $0.kind == .run }
+        let total = runs.reduce(0.0) { partial, session in
+            partial + miles(from: session.runDetail?.distance)
+        }
+        return total
+    }
+
+    private var completedRunMiles: Double {
+        let sessions = viewModel.weekPlan.days.flatMap { $0.sessions }
+        let runs = sessions.filter { $0.kind == .run && $0.status == .completed }
+        let total = runs.reduce(0.0) { partial, session in
+            partial + miles(from: session.runDetail?.distance)
+        }
+        return total
+    }
+
+    private func miles(from distanceString: String?) -> Double {
+        guard let s = distanceString else { return 0 }
+        let filtered = s.filter { "0123456789.".contains($0) }
+        return Double(filtered) ?? 0
+    }
 }
 
 struct SessionRow: View {
@@ -602,10 +655,23 @@ struct SessionRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(session.title)
                     .font(.headline)
-                if session.kind == .run, let run = session.runDetail, !run.distance.isEmpty {
-                    Text("\(run.distance) mi")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                if session.kind == .run, let run = session.runDetail {
+                    HStack(spacing: 6) {
+                        if !run.distance.isEmpty {
+                            Text("\(run.distance) mi")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let cat = run.category {
+                            Text(cat.rawValue)
+                                .font(.caption2.weight(.semibold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.blue.opacity(0.12))
+                                .foregroundStyle(Color.blue)
+                                .clipShape(Capsule())
+                        }
+                    }
                 } else {
                     if let template = session.templateName {
                         Text(template)
@@ -667,37 +733,66 @@ struct TemplateLibraryView: View {
     @State private var newExerciseSetsCount: String = ""
     @State private var newExerciseMinReps: Int = 6
     @State private var newExerciseMaxReps: Int = 10
+    @State private var newRunCategory: RunCategory = .easy
     @State private var templatePendingDelete: StrengthTemplate?
     @State private var showingDeleteAlert = false
 
     var body: some View {
         List {
-            ForEach(viewModel.templates) { template in
-                NavigationLink {
-                    TemplateDetailView(template: template)
-                } label: {
-                    VStack(alignment: .leading) {
-                        Text(template.name)
-                            .font(.headline)
-                        Label(template.category.rawValue, systemImage: template.category.systemImage)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        if let note = template.note {
-                            Text(note)
-                                .font(.caption)
+            Section("Strength") {
+                ForEach(viewModel.templates.filter { $0.category == .strength }) { template in
+                    NavigationLink {
+                        TemplateDetailView(template: template)
+                    } label: {
+                        VStack(alignment: .leading) {
+                            Text(template.name)
+                                .font(.headline)
+                            if let note = template.note {
+                                Text(note)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Text("\(template.exercises.count) exercises")
+                                .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
-                        Text("\(template.exercises.count) exercises")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive) {
+                            templatePendingDelete = template
+                            showingDeleteAlert = true
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
                     }
                 }
-                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                    Button(role: .destructive) {
-                        templatePendingDelete = template
-                        showingDeleteAlert = true
+            }
+
+            Section("Run") {
+                ForEach(viewModel.templates.filter { $0.category == .run }) { template in
+                    NavigationLink {
+                        TemplateDetailView(template: template)
                     } label: {
-                        Label("Delete", systemImage: "trash")
+                        VStack(alignment: .leading) {
+                            Text(template.name)
+                                .font(.headline)
+                            if let note = template.note {
+                                Text(note)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Text("\(template.exercises.count) items")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive) {
+                            templatePendingDelete = template
+                            showingDeleteAlert = true
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
                     }
                 }
             }
@@ -729,12 +824,20 @@ struct TemplateLibraryView: View {
                                 Text(category.rawValue).tag(category)
                             }
                         }
-                        .pickerStyle(.segmented)
                     }
                     Section("Template Info") {
                         TextField("Name", text: $newTemplateName)
                         TextField("Note (optional)", text: $newTemplateNote, axis: .vertical)
                             .lineLimit(3, reservesSpace: true)
+                    }
+                    if newTemplateCategory == .run {
+                        Section("Run type") {
+                            Picker("Run type", selection: $newRunCategory) {
+                                ForEach(RunCategory.allCases) { cat in
+                                    Text(cat.rawValue).tag(cat)
+                                }
+                            }
+                        }
                     }
                     if newTemplateCategory == .strength {
                         Section("Lifts & sets") {
@@ -831,7 +934,7 @@ struct TemplateLibraryView: View {
             exercises = []
         }
 
-        viewModel.addTemplate(name: newTemplateName, note: newTemplateNote, category: newTemplateCategory, exercises: exercises)
+        viewModel.addTemplate(name: newTemplateName, note: newTemplateNote, category: newTemplateCategory, exercises: exercises, runCategory: newTemplateCategory == .run ? newRunCategory : nil)
         dismissSheet()
     }
 
