@@ -20,7 +20,7 @@ struct TemplateLibraryView: View {
             Section("Strength") {
                 ForEach(viewModel.templates.filter { $0.category == .strength }) { template in
                     NavigationLink {
-                        TemplateDetailView(template: template)
+                        TemplateDetailView(template: template, viewModel: viewModel)
                     } label: {
                         VStack(alignment: .leading) {
                             Text(template.name)
@@ -49,7 +49,7 @@ struct TemplateLibraryView: View {
             Section("Run") {
                 ForEach(viewModel.templates.filter { $0.category == .run }) { template in
                     NavigationLink {
-                        TemplateDetailView(template: template)
+                        TemplateDetailView(template: template, viewModel: viewModel)
                     } label: {
                         VStack(alignment: .leading) {
                             Text(template.name)
@@ -264,13 +264,24 @@ struct TemplateLibraryView: View {
 
 struct TemplateDetailView: View {
     let template: StrengthTemplate
+    @ObservedObject var viewModel: TemplateLibraryViewModel
+
+    @State private var showingEdit = false
+    @State private var editName: String = ""
+    @State private var editNote: String = ""
+    @State private var editRunCategory: RunCategory = .easy
 
     var body: some View {
         List {
             Section {
                 Label(template.category.rawValue, systemImage: template.category.systemImage)
+                if template.category == .run, let runCat = template.runCategory {
+                    Label("Run type: \(runCat.rawValue)", systemImage: "tag")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
-            if let note = template.note {
+            if let note = template.note, !note.isEmpty {
                 Section("Notes") {
                     Text(note)
                 }
@@ -299,6 +310,55 @@ struct TemplateDetailView: View {
             }
         }
         .navigationTitle(template.name)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Edit") {
+                    editName = template.name
+                    editNote = template.note ?? ""
+                    editRunCategory = template.runCategory ?? .easy
+                    showingEdit = true
+                }
+            }
+        }
+        .sheet(isPresented: $showingEdit) {
+            NavigationStack {
+                Form {
+                    Section("Template Info") {
+                        TextField("Name", text: $editName)
+                        TextField("Note (optional)", text: $editNote, axis: .vertical)
+                            .lineLimit(3, reservesSpace: true)
+                    }
+                    if template.category == .run {
+                        Section("Run type") {
+                            Picker("Run type", selection: $editRunCategory) {
+                                ForEach(RunCategory.allCases) { cat in
+                                    Text(cat.rawValue).tag(cat)
+                                }
+                            }
+                        }
+                    }
+                }
+                .navigationTitle("Edit Template")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { showingEdit = false }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") {
+                            var updated = template
+                            updated.name = editName.trimmingCharacters(in: .whitespacesAndNewlines)
+                            updated.note = editNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editNote
+                            if updated.category == .run {
+                                updated.runCategory = editRunCategory
+                            }
+                            viewModel.updateTemplate(updated)
+                            showingEdit = false
+                        }
+                        .disabled(editName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -34,12 +34,16 @@ final class TemplateLibraryViewModel: ObservableObject {
             cleanedNote = nil
         }
 
-        var newTemplate = StrengthTemplate(name: trimmedName, category: category, exercises: exercises, note: cleanedNote)
-        if category == .run, let runCategory {
-            newTemplate.note = [cleanedNote, "Type: \(runCategory.rawValue)"].compactMap { $0 }.joined(separator: " • ")
-        }
+        var newTemplate = StrengthTemplate(name: trimmedName, category: category, exercises: exercises, note: cleanedNote, runCategory: runCategory)
         templates.append(newTemplate)
         persistTemplates()
+    }
+
+    func updateTemplate(_ updated: StrengthTemplate) {
+        if let idx = templates.firstIndex(where: { $0.id == updated.id }) {
+            templates[idx] = updated
+            persistTemplates()
+        }
     }
 
     func deleteTemplate(id: UUID) {
@@ -70,6 +74,7 @@ final class TemplateLibraryViewModel: ObservableObject {
                     )
                 ],
                 note: "Baseline template for push focus days."
+                , runCategory: nil
             ),
             StrengthTemplate(
                 name: "Lower Mixed",
@@ -90,7 +95,8 @@ final class TemplateLibraryViewModel: ObservableObject {
                         ]
                     )
                 ],
-                note: "Hybrid lower day with hinge + squat."
+                note: "Hybrid lower day with hinge + squat.",
+                runCategory: nil
             )
         ]
     }

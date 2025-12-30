@@ -105,13 +105,15 @@ struct StrengthTemplate: Identifiable, Codable {
     var category: TemplateCategory
     var exercises: [StrengthExercise]
     var note: String?
+    var runCategory: RunCategory?
 
-    init(id: UUID = UUID(), name: String, category: TemplateCategory, exercises: [StrengthExercise], note: String? = nil) {
+    init(id: UUID = UUID(), name: String, category: TemplateCategory, exercises: [StrengthExercise], note: String? = nil, runCategory: RunCategory? = nil) {
         self.id = id
         self.name = name
         self.category = category
         self.exercises = exercises
         self.note = note
+        self.runCategory = runCategory
     }
 }
 
