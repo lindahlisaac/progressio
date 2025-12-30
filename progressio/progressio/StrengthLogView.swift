@@ -18,6 +18,20 @@ struct StrengthLogView: View {
     private struct StrengthLogState: Codable {
         var sessionID: UUID
         var exercises: [ExerciseLog]
+        var isCompleted: Bool
+
+        init(sessionID: UUID, exercises: [ExerciseLog], isCompleted: Bool) {
+            self.sessionID = sessionID
+            self.exercises = exercises
+            self.isCompleted = isCompleted
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            sessionID = try container.decode(UUID.self, forKey: .sessionID)
+            exercises = try container.decode([ExerciseLog].self, forKey: .exercises)
+            isCompleted = try container.decodeIfPresent(Bool.self, forKey: .isCompleted) ?? false
+        }
     }
 
     let session: PlannedSession
@@ -26,8 +40,11 @@ struct StrengthLogView: View {
     @State private var showingAddExerciseSheet = false
     @State private var newExerciseName: String = ""
     @FocusState private var isInputFocused: Bool
+    @State private var isLocked: Bool
+    @State private var isCompleted: Bool
     private let storageURL: URL
     @Environment(\.scenePhase) private var scenePhase
+    private let onCompleteStatus: (() -> Void)?
 
     private struct ExerciseSection: View {
         @Binding var exercise: StrengthLogView.ExerciseLog
@@ -35,16 +52,19 @@ struct StrengthLogView: View {
         var addSet: (UUID) -> Void
         var isInputFocused: FocusState<Bool>.Binding
         var onChanged: () -> Void
+        var isLocked: Bool
 
         var body: some View {
             Section(header: Text(exercise.name)) {
-                ForEach($exercise.sets) { $set in
-                    SetRow(set: $set, isInputFocused: isInputFocused, onChanged: onChanged)
+                ForEach(exercise.sets.indices, id: \.self) { idx in
+                    SetRow(set: $exercise.sets[idx], isInputFocused: isInputFocused, onChanged: onChanged)
                 }
                 .onDelete { indexSet in
+                    guard !isLocked else { return }
                     removeSets(indexSet, exercise.id)
                     onChanged()
                 }
+                .deleteDisabled(isLocked)
 
                 Button {
                     addSet(exercise.id)
@@ -52,6 +72,7 @@ struct StrengthLogView: View {
                 } label: {
                     Label("Add set", systemImage: "plus.circle")
                 }
+                .disabled(isLocked)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Exercise RPE (optional)")
@@ -61,13 +82,15 @@ struct StrengthLogView: View {
                         .keyboardType(.decimalPad)
                         .focused(isInputFocused)
                         .onChange(of: exercise.rpe) { _ in onChanged() }
+                        .disabled(isLocked)
                 }
             }
         }
     }
 
-    init(session: PlannedSession, template: StrengthTemplate?) {
+    init(session: PlannedSession, template: StrengthTemplate?, onCompleteStatus: (() -> Void)? = nil) {
         self.session = session
+        self.onCompleteStatus = onCompleteStatus
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         self.storageURL = docs.appendingPathComponent("strengthlog-\(session.id.uuidString).json")
 
@@ -93,8 +116,13 @@ struct StrengthLogView: View {
 
         if let loaded = StrengthLogView.loadState(from: storageURL) {
             _exercises = State(initialValue: loaded.exercises)
+            _isCompleted = State(initialValue: loaded.isCompleted)
+            _isLocked = State(initialValue: loaded.isCompleted)
         } else {
             _exercises = State(initialValue: initialExercises)
+            let completed = session.status == .completed
+            _isCompleted = State(initialValue: completed)
+            _isLocked = State(initialValue: completed)
         }
     }
 
@@ -106,7 +134,8 @@ struct StrengthLogView: View {
                     removeSets: removeSets,
                     addSet: addSet,
                     isInputFocused: $isInputFocused,
-                    onChanged: persistState
+                    onChanged: persistState,
+                    isLocked: isLocked
                 )
             }
             .onDelete(perform: deleteExercise)
@@ -127,6 +156,21 @@ struct StrengthLogView: View {
                     Label("Reset", systemImage: "arrow.counterclockwise")
                 }
                 .disabled(exercises == initialExercises)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                if isLocked {
+                    Button {
+                        isLocked = false
+                    } label: {
+                        Label("Edit", systemImage: "pencil")
+                    }
+                } else {
+                    Button {
+                        markComplete()
+                    } label: {
+                        Label("Complete", systemImage: "checkmark.circle.fill")
+                    }
+                }
             }
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
@@ -202,8 +246,17 @@ struct StrengthLogView: View {
         showingAddExerciseSheet = false
     }
 
+    private func markComplete() {
+        isCompleted = true
+        isLocked = true
+        onCompleteStatus?()
+        persistState()
+    }
+
     private func resetLog() {
         exercises = initialExercises
+        isCompleted = false
+        isLocked = false
         do {
             if FileManager.default.fileExists(atPath: storageURL.path) {
                 try FileManager.default.removeItem(at: storageURL)
@@ -215,7 +268,7 @@ struct StrengthLogView: View {
     }
 
     private func persistState() {
-        let state = StrengthLogState(sessionID: session.id, exercises: exercises)
+        let state = StrengthLogState(sessionID: session.id, exercises: exercises, isCompleted: isCompleted)
         let encoder = JSONEncoder()
         do {
             let data = try encoder.encode(state)

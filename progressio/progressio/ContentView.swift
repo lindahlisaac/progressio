@@ -29,6 +29,14 @@ enum PlanStatus: String, CaseIterable, Codable {
     }
 }
 
+struct RunDetailData: Codable, Equatable {
+    var title: String
+    var notes: String
+    var distance: String
+    var duration: String
+    var averageHR: String
+}
+
 struct PlannedSession: Identifiable, Codable {
     let id: UUID
     var title: String
@@ -36,6 +44,7 @@ struct PlannedSession: Identifiable, Codable {
     var status: PlanStatus
     var note: String?
     var templateName: String?
+    var runDetail: RunDetailData?
 
     init(id: UUID = UUID(), title: String, kind: SessionKind, status: PlanStatus = .planned, note: String? = nil, templateName: String? = nil) {
         self.id = id
@@ -270,7 +279,21 @@ final class WeekPlannerViewModel: ObservableObject {
         weekPlan.days[dayIndex].sessions.append(
             PlannedSession(
                 title: template.name,
-                kind: .strength,
+                kind: template.category == .run ? .run : .strength,
+                status: .planned,
+                note: "From template",
+                templateName: template.name
+            )
+        )
+        persistWeek()
+    }
+
+    func addTemplateSession(template: StrengthTemplate, on date: Date) {
+        guard let dayIndex = dayIndex(for: date) else { return }
+        weekPlan.days[dayIndex].sessions.append(
+            PlannedSession(
+                title: template.name,
+                kind: template.category == .run ? .run : .strength,
                 status: .planned,
                 note: "From template",
                 templateName: template.name
@@ -316,6 +339,29 @@ final class WeekPlannerViewModel: ObservableObject {
         persistWeek()
     }
 
+    func setSessionStatus(sessionID: UUID, status: PlanStatus) {
+        for dayIdx in weekPlan.days.indices {
+            if let sessionIndex = weekPlan.days[dayIdx].sessions.firstIndex(where: { $0.id == sessionID }) {
+                weekPlan.days[dayIdx].sessions[sessionIndex].status = status
+                persistWeek()
+                break
+            }
+        }
+    }
+
+    func updateRunDetail(sessionID: UUID, detail: RunDetailData, status: PlanStatus) {
+        for dayIdx in weekPlan.days.indices {
+            if let sessionIndex = weekPlan.days[dayIdx].sessions.firstIndex(where: { $0.id == sessionID }) {
+                weekPlan.days[dayIdx].sessions[sessionIndex].runDetail = detail
+                weekPlan.days[dayIdx].sessions[sessionIndex].title = detail.title
+                weekPlan.days[dayIdx].sessions[sessionIndex].note = detail.notes.isEmpty ? weekPlan.days[dayIdx].sessions[sessionIndex].note : detail.notes
+                weekPlan.days[dayIdx].sessions[sessionIndex].status = status
+                persistWeek()
+                break
+            }
+        }
+    }
+
     private func dayIndex(for date: Date) -> Int? {
         weekPlan.days.firstIndex { calendar.isDate($0.date, inSameDayAs: date) }
     }
@@ -329,7 +375,7 @@ final class WeekPlannerViewModel: ObservableObject {
                 sessions.append(
                     PlannedSession(
                         title: template.name,
-                        kind: .strength,
+                        kind: template.category == .run ? .run : .strength,
                         status: .planned,
                         note: "Tap to log sets and mark complete",
                         templateName: template.name
@@ -350,7 +396,7 @@ final class WeekPlannerViewModel: ObservableObject {
                 sessions.append(
                     PlannedSession(
                         title: templates[1].name,
-                        kind: .strength,
+                        kind: templates[1].category == .run ? .run : .strength,
                         status: .planned,
                         note: "Use template for progressive overload",
                         templateName: templates[1].name
@@ -439,37 +485,36 @@ struct WeekPlannerView: View {
                         Text("No sessions planned").foregroundStyle(.secondary)
                     } else {
                         ForEach(day.sessions) { session in
-                            if session.kind == .strength {
-                                NavigationLink {
+                            NavigationLink {
+                                if session.kind == .strength {
                                     StrengthLogView(
                                         session: session,
-                                        template: templatesViewModel.templates.first(where: { $0.name == session.templateName })
+                                        template: templatesViewModel.templates.first(where: { $0.name == session.templateName }),
+                                        onCompleteStatus: {
+                                            viewModel.setSessionStatus(sessionID: session.id, status: .completed)
+                                        }
                                     )
-                                } label: {
-                                    SessionRow(
+                                } else {
+                                    RunDetailView(
                                         session: session,
-                                        onToggle: { viewModel.toggleStatus(sessionID: session.id) },
-                                        onDelete: { viewModel.removeSession(dayID: day.id, sessionID: session.id) }
+                                        onSave: { detail, status in
+                                            viewModel.updateRunDetail(sessionID: session.id, detail: detail, status: status)
+                                        }
                                     )
                                 }
-                                .buttonStyle(.plain)
-                            } else {
+                            } label: {
                                 SessionRow(
                                     session: session,
                                     onToggle: { viewModel.toggleStatus(sessionID: session.id) },
-                                    onDelete: { viewModel.removeSession(dayID: day.id, sessionID: session.id) }
+                                    onDelete: { viewModel.removeSession(dayID: day.id, sessionID: session.id) },
+                                    showsDisclosure: true
                                 )
                             }
+                            .buttonStyle(.plain)
                         }
                     }
 
                     Menu("Add workout") {
-                        Button {
-                            templatePickerDate = day.date
-                            showingTemplatePicker = true
-                        } label: {
-                            Label("Strength (choose template)", systemImage: SessionKind.strength.systemImage)
-                        }
                         Button {
                             viewModel.addRun(on: day.date, title: "Planned Run", planned: true)
                         } label: {
@@ -479,6 +524,12 @@ struct WeekPlannerView: View {
                             viewModel.addRun(on: day.date, title: "Detected run", planned: false)
                         } label: {
                             Label("Attach detected run", systemImage: "bolt.heart")
+                        }
+                        Button {
+                            templatePickerDate = day.date
+                            showingTemplatePicker = true
+                        } label: {
+                            Label("Add from template", systemImage: "doc.on.doc")
                         }
                     }
                 }
@@ -491,7 +542,7 @@ struct WeekPlannerView: View {
                     ForEach(templatesViewModel.templates) { template in
                         Button {
                             if let date = templatePickerDate {
-                                viewModel.addStrengthSession(template: template, on: date)
+                                viewModel.addTemplateSession(template: template, on: date)
                             }
                             showingTemplatePicker = false
                         } label: {
@@ -530,6 +581,7 @@ struct SessionRow: View {
     let session: PlannedSession
     let onToggle: () -> Void
     let onDelete: () -> Void
+    var showsDisclosure: Bool = false
 
     private var leadingLabel: String {
         switch session.status {
@@ -550,27 +602,40 @@ struct SessionRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(session.title)
                     .font(.headline)
-                if let template = session.templateName {
-                    Text(template)
+                if session.kind == .run, let run = session.runDetail, !run.distance.isEmpty {
+                    Text("\(run.distance) mi")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                }
-                if let note = session.note {
-                    Text(note)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                } else {
+                    if let template = session.templateName {
+                        Text(template)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let note = session.note {
+                        Text(note)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
-            Spacer()
+            Spacer(minLength: 8)
 
-            Text(session.status.rawValue)
-                .font(.caption.weight(.semibold))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(session.status.tint.opacity(0.15))
-                .foregroundStyle(session.status.tint)
-                .clipShape(Capsule())
+            HStack(spacing: 6) {
+                Text(session.status.rawValue)
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(session.status.tint.opacity(0.15))
+                    .foregroundStyle(session.status.tint)
+                    .clipShape(Capsule())
+                if showsDisclosure {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
         .contentShape(Rectangle())
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
