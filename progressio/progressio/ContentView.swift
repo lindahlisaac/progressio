@@ -27,7 +27,7 @@ struct ContentView: View {
             }
 
             NavigationStack {
-                SettingsView()
+                SettingsView(weekViewModel: weekViewModel)
             }
             .tabItem {
                 Label("Settings", systemImage: "gearshape")

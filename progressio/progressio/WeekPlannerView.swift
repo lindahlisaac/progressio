@@ -1,13 +1,39 @@
 import SwiftUI
+import HealthKit
 
 struct WeekPlannerView: View {
     @ObservedObject var viewModel: WeekPlannerViewModel
     @ObservedObject var templatesViewModel: TemplateLibraryViewModel
     @State private var showingTemplatePicker = false
     @State private var templatePickerDate: Date?
+    @State private var hasStartedHKObserver = false
+    @State private var previousUnattachedCount: Int = 0
+    @State private var showingUnattachedSheet = false
 
     var body: some View {
         List {
+            if !viewModel.unattachedRuns.isEmpty {
+                NavigationLink {
+                    UnattachedRunsView(runs: viewModel.unattachedRuns)
+                } label: {
+                    HStack {
+                        Label("Unattached runs", systemImage: "bolt.heart")
+                        Spacer()
+                        ZStack {
+                            Circle()
+                                .fill(Color.blue.opacity(0.15))
+                                .frame(width: 28, height: 28)
+                            Text("\(viewModel.unattachedRuns.count)")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.blue)
+                        }
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+
             Section("Run Mileage") {
                 HStack {
                     Label("Completed", systemImage: "checkmark.circle")
@@ -83,6 +109,15 @@ struct WeekPlannerView: View {
             }
         }
         .navigationTitle("This Week")
+        .onAppear {
+            startHealthKitObserverIfNeeded()
+        }
+        .onChange(of: viewModel.unattachedRuns.count) { newCount in
+            if newCount > previousUnattachedCount {
+                showingUnattachedSheet = true
+            }
+            previousUnattachedCount = newCount
+        }
         .sheet(isPresented: $showingTemplatePicker) {
             NavigationStack {
                 List {
@@ -115,6 +150,16 @@ struct WeekPlannerView: View {
                 }
             }
         }
+        .sheet(isPresented: $showingUnattachedSheet) {
+            NavigationStack {
+                UnattachedRunsView(runs: viewModel.unattachedRuns)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Close") { showingUnattachedSheet = false }
+                        }
+                    }
+            }
+        }
     }
 
     private func dayHeader(for date: Date) -> String {
@@ -145,6 +190,17 @@ struct WeekPlannerView: View {
         guard let s = distanceString else { return 0 }
         let filtered = s.filter { "0123456789.".contains($0) }
         return Double(filtered) ?? 0
+    }
+
+    private func startHealthKitObserverIfNeeded() {
+        guard !hasStartedHKObserver, HKHealthStore.isHealthDataAvailable() else { return }
+        hasStartedHKObserver = true
+        let threeDaysAgo = Calendar.current.date(byAdding: .day, value: -3, to: Date())
+        HealthKitManager.shared.startObservingRuns {
+            HealthKitManager.shared.fetchRecentRuns(since: threeDaysAgo) { runs in
+                runs.forEach { viewModel.addUnattachedRun($0) }
+            }
+        }
     }
 }
 

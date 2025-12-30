@@ -1,11 +1,62 @@
 import SwiftUI
+import HealthKit
 
 struct SettingsView: View {
+    @ObservedObject var weekViewModel: WeekPlannerViewModel
+    @State private var isImporting = false
+    @State private var importMessage: String?
+
     var body: some View {
         List {
             Section("HealthKit") {
-                Label("Runs are read from HealthKit only", systemImage: "shield.lefthalf.filled")
-                Label("Grant run + HR read access in Settings", systemImage: "heart.text.square")
+                Button {
+                    HealthKitManager.shared.requestAuthorization { success, error in
+                        if let error {
+                            print("HK auth error: \(error)")
+                        } else {
+                            print("HK auth \(success ? "granted" : "not granted")")
+                        }
+                    }
+                } label: {
+                    Label("Request Health Access", systemImage: "shield.lefthalf.filled")
+                }
+                Button {
+                    guard HKHealthStore.isHealthDataAvailable() else {
+                        importMessage = "Health data not available on this device."
+                        return
+                    }
+                    isImporting = true
+                    HealthKitManager.shared.requestAuthorization { success, error in
+                        if let error {
+                            importMessage = "Auth failed: \(error.localizedDescription)"
+                            isImporting = false
+                            return
+                        }
+                        guard success else {
+                            importMessage = "Health access was not granted."
+                            isImporting = false
+                            return
+                        }
+                        let start = Calendar.current.date(byAdding: .day, value: -7, to: Date())
+                        HealthKitManager.shared.fetchRecentRuns(since: start) { runs in
+                            runs.forEach { weekViewModel.addUnattachedRun($0) }
+                            importMessage = runs.isEmpty ? "No new runs found." : "Imported \(runs.count) run(s)."
+                            isImporting = false
+                        }
+                    }
+                } label: {
+                    Label("Import last 7 days of runs", systemImage: "arrow.down.circle")
+                }
+                if isImporting {
+                    HStack {
+                        ProgressView()
+                        Text("Importing…")
+                    }
+                } else if let importMessage {
+                    Text(importMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
             Section("Coming soon") {
                 Label("Attach detected runs to planned days", systemImage: "bolt.heart")
@@ -17,7 +68,7 @@ struct SettingsView: View {
 }
 
 #Preview {
-    SettingsView()
+    SettingsView(weekViewModel: WeekPlannerViewModel(templates: TemplateLibraryViewModel.makeSamples()))
 }
 
 

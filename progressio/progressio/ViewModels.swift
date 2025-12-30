@@ -130,9 +130,14 @@ final class WeekPlannerViewModel: ObservableObject {
     private let calendar: Calendar
 
     @Published var weekPlan: WeekPlan
+    @Published var unattachedRuns: [UnattachedRun] = []
     private static var storageURL: URL = {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         return docs.appendingPathComponent("weekplan.json")
+    }()
+    private static var unattachedURL: URL = {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        return docs.appendingPathComponent("unattachedRuns.json")
     }()
 
     init(calendar: Calendar = .current, templates: [StrengthTemplate]) {
@@ -144,6 +149,7 @@ final class WeekPlannerViewModel: ObservableObject {
             self.weekPlan = sample
             persistWeek()
         }
+        self.unattachedRuns = WeekPlannerViewModel.loadUnattachedRuns()
     }
 
     func addStrengthSession(template: StrengthTemplate, on date: Date) {
@@ -231,6 +237,44 @@ final class WeekPlannerViewModel: ObservableObject {
                 persistWeek()
                 break
             }
+        }
+    }
+
+    func addUnattachedRun(_ run: UnattachedRun) {
+        if let uuid = run.detail.hkWorkoutUUID, unattachedRuns.contains(where: { $0.detail.hkWorkoutUUID == uuid }) {
+            return
+        }
+        unattachedRuns.append(run)
+        persistUnattached()
+    }
+
+    func removeUnattachedRun(id: UUID) {
+        unattachedRuns.removeAll { $0.id == id }
+        persistUnattached()
+    }
+
+    private func persistUnattached() {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        do {
+            let data = try encoder.encode(unattachedRuns)
+            try data.write(to: Self.unattachedURL, options: .atomic)
+        } catch {
+            print("Failed to persist unattached runs: \(error)")
+        }
+    }
+
+    private static func loadUnattachedRuns() -> [UnattachedRun] {
+        let url = unattachedURL
+        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
+        do {
+            let data = try Data(contentsOf: url)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            return try decoder.decode([UnattachedRun].self, from: data)
+        } catch {
+            print("Failed to load unattached runs: \(error)")
+            return []
         }
     }
 

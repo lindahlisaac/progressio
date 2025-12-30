@@ -60,6 +60,7 @@ struct RunDetailData: Codable, Equatable {
     var duration: String
     var averageHR: String
     var category: RunCategory?
+    var hkWorkoutUUID: String?
 }
 
 struct PlannedSession: Identifiable, Codable {
@@ -151,6 +152,20 @@ struct NewExerciseInput: Identifiable {
     var setsCount: Int
     var repRange: String
     var createdAt: Date = Date()
+}
+
+struct UnattachedRun: Identifiable, Codable, Equatable {
+    let id: UUID
+    var detail: RunDetailData
+    var date: Date
+    var source: String?
+
+    init(id: UUID = UUID(), detail: RunDetailData, date: Date, source: String? = nil) {
+        self.id = id
+        self.detail = detail
+        self.date = date
+        self.source = source
+    }
 }
 
 extension Calendar {
