@@ -45,6 +45,8 @@ struct StrengthLogView: View {
     private let storageURL: URL
     @Environment(\.scenePhase) private var scenePhase
     private let onCompleteStatus: (() -> Void)?
+    private let onUnlockStatus: (() -> Void)?
+    @State private var showingResetConfirm = false
 
     private struct ExerciseSection: View {
         @Binding var exercise: StrengthLogView.ExerciseLog
@@ -57,7 +59,7 @@ struct StrengthLogView: View {
         var body: some View {
             Section(header: Text(exercise.name)) {
                 ForEach(exercise.sets.indices, id: \.self) { idx in
-                    SetRow(set: $exercise.sets[idx], isInputFocused: isInputFocused, onChanged: onChanged)
+                    SetRow(set: $exercise.sets[idx], isInputFocused: isInputFocused, onChanged: onChanged, isLocked: isLocked)
                 }
                 .onDelete { indexSet in
                     guard !isLocked else { return }
@@ -88,9 +90,10 @@ struct StrengthLogView: View {
         }
     }
 
-    init(session: PlannedSession, template: StrengthTemplate?, onCompleteStatus: (() -> Void)? = nil) {
+    init(session: PlannedSession, template: StrengthTemplate?, onCompleteStatus: (() -> Void)? = nil, onUnlockStatus: (() -> Void)? = nil) {
         self.session = session
         self.onCompleteStatus = onCompleteStatus
+        self.onUnlockStatus = onUnlockStatus
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         self.storageURL = docs.appendingPathComponent("strengthlog-\(session.id.uuidString).json")
 
@@ -116,8 +119,9 @@ struct StrengthLogView: View {
 
         if let loaded = StrengthLogView.loadState(from: storageURL) {
             _exercises = State(initialValue: loaded.exercises)
-            _isCompleted = State(initialValue: loaded.isCompleted)
-            _isLocked = State(initialValue: loaded.isCompleted)
+            let completed = session.status == .completed ? loaded.isCompleted : false
+            _isCompleted = State(initialValue: completed)
+            _isLocked = State(initialValue: completed)
         } else {
             _exercises = State(initialValue: initialExercises)
             let completed = session.status == .completed
@@ -151,26 +155,11 @@ struct StrengthLogView: View {
             }
             ToolbarItem(placement: .cancellationAction) {
                 Button(role: .destructive) {
-                    resetLog()
+                    showingResetConfirm = true
                 } label: {
                     Label("Reset", systemImage: "arrow.counterclockwise")
                 }
                 .disabled(exercises == initialExercises)
-            }
-            ToolbarItem(placement: .primaryAction) {
-                if isLocked {
-                    Button {
-                        isLocked = false
-                    } label: {
-                        Label("Edit", systemImage: "pencil")
-                    }
-                } else {
-                    Button {
-                        markComplete()
-                    } label: {
-                        Label("Complete", systemImage: "checkmark.circle.fill")
-                    }
-                }
             }
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
@@ -213,6 +202,37 @@ struct StrengthLogView: View {
                 }
             }
         }
+        .alert("Clear log?", isPresented: $showingResetConfirm) {
+            Button("Clear", role: .destructive) {
+                resetLog()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This will remove entered weights and reps for this session.")
+        }
+        .safeAreaInset(edge: .bottom) {
+            Button {
+                if isLocked {
+                    isLocked = false
+                    isCompleted = false
+                    onUnlockStatus?()
+                    persistState()
+                } else {
+                    markComplete()
+                }
+            } label: {
+                Text(isLocked ? "Edit workout" : "Complete workout")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(isLocked ? Color.blue.opacity(0.15) : Color.green.opacity(0.2))
+                    .foregroundStyle(isLocked ? Color.blue : Color.green)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .padding(.horizontal)
+            }
+            .padding(.vertical, 8)
+            .background(.ultraThinMaterial)
+        }
     }
 
     private func deleteExercise(at offsets: IndexSet) {
@@ -249,6 +269,7 @@ struct StrengthLogView: View {
     private func markComplete() {
         isCompleted = true
         isLocked = true
+        isInputFocused = false
         onCompleteStatus?()
         persistState()
     }
@@ -282,6 +303,9 @@ struct StrengthLogView: View {
     private func reloadStateIfAvailable() {
         if let latest = StrengthLogView.loadState(from: storageURL) {
             exercises = latest.exercises
+            let completed = session.status == .completed ? latest.isCompleted : false
+            isCompleted = completed
+            isLocked = completed
         }
     }
 
@@ -304,32 +328,64 @@ private struct SetRow: View {
     @Binding var set: StrengthLogView.SetLog
     var isInputFocused: FocusState<Bool>.Binding
     var onChanged: () -> Void
+    var isLocked: Bool
+
+    @State private var repSelection: Int = 0
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Weight")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                HStack {
-                    TextField("e.g. 135", text: $set.weight)
-                        .keyboardType(.decimalPad)
-                        .textFieldStyle(.roundedBorder)
-                        .focused(isInputFocused)
-                        .onChange(of: set.weight) { _ in onChanged() }
-                    Text("lb")
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Weight")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
+                    HStack {
+                        TextField("e.g. 135", text: $set.weight)
+                            .keyboardType(.decimalPad)
+                            .textFieldStyle(.roundedBorder)
+                            .focused(isInputFocused)
+                            .onChange(of: set.weight) { _ in onChanged() }
+                        Text("lb")
+                            .foregroundStyle(.secondary)
+                    }
+                    .disabled(isLocked)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Reps")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    HStack {
+                        Picker("", selection: $repSelection) {
+                            ForEach(0...99, id: \.self) { value in
+                                Text("\(value)").tag(value)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .tint(.white)
+                        .onChange(of: repSelection) { newValue in
+                            set.reps = "\(newValue)"
+                            onChanged()
+                        }
+                        .disabled(isLocked)
+
+                        Spacer()
+
+                        if !set.repHint.isEmpty {
+                            Text(set.repHint)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Reps")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                TextField(set.repHint.isEmpty ? "e.g. 8" : set.repHint, text: $set.reps, prompt: set.repHint.isEmpty ? nil : Text(set.repHint))
-                    .keyboardType(.numberPad)
-                    .textFieldStyle(.roundedBorder)
-                    .focused(isInputFocused)
-                    .onChange(of: set.reps) { _ in onChanged() }
+        }
+        .onAppear {
+            if let current = Int(set.reps) {
+                repSelection = max(0, min(99, current))
+            } else {
+                repSelection = 0
             }
         }
         .padding(.vertical, 4)
