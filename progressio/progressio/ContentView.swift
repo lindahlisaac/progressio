@@ -29,7 +29,7 @@ enum PlanStatus: String, CaseIterable, Codable {
     }
 }
 
-struct PlannedSession: Identifiable {
+struct PlannedSession: Identifiable, Codable {
     let id: UUID
     var title: String
     var kind: SessionKind
@@ -47,7 +47,7 @@ struct PlannedSession: Identifiable {
     }
 }
 
-struct DayPlan: Identifiable {
+struct DayPlan: Identifiable, Codable {
     let id: UUID
     let date: Date
     var sessions: [PlannedSession]
@@ -59,7 +59,7 @@ struct DayPlan: Identifiable {
     }
 }
 
-struct WeekPlan {
+struct WeekPlan: Codable {
     let startOfWeek: Date
     var days: [DayPlan]
 }
@@ -249,10 +249,20 @@ final class WeekPlannerViewModel: ObservableObject {
     private let calendar: Calendar
 
     @Published var weekPlan: WeekPlan
+    private static var storageURL: URL = {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        return docs.appendingPathComponent("weekplan.json")
+    }()
 
     init(calendar: Calendar = .current, templates: [StrengthTemplate]) {
         self.calendar = calendar
-        self.weekPlan = WeekPlannerViewModel.makeSampleWeek(calendar: calendar, templates: templates)
+        if let loaded = WeekPlannerViewModel.loadPersistedWeek() {
+            self.weekPlan = loaded
+        } else {
+            let sample = WeekPlannerViewModel.makeSampleWeek(calendar: calendar, templates: templates)
+            self.weekPlan = sample
+            persistWeek()
+        }
     }
 
     func addStrengthSession(template: StrengthTemplate, on date: Date) {
@@ -266,6 +276,7 @@ final class WeekPlannerViewModel: ObservableObject {
                 templateName: template.name
             )
         )
+        persistWeek()
     }
 
     func addRun(on date: Date, title: String = "Run", planned: Bool = true) {
@@ -278,6 +289,7 @@ final class WeekPlannerViewModel: ObservableObject {
                 note: planned ? "Attach the detected HealthKit run" : "Logged from detected run"
             )
         )
+        persistWeek()
     }
 
     func toggleStatus(sessionID: UUID) {
@@ -292,6 +304,7 @@ final class WeekPlannerViewModel: ObservableObject {
                 case .completed:
                     weekPlan.days[dayIdx].sessions[sessionIndex].status = .planned
                 }
+                persistWeek()
                 break
             }
         }
@@ -300,6 +313,7 @@ final class WeekPlannerViewModel: ObservableObject {
     func removeSession(dayID: UUID, sessionID: UUID) {
         guard let dayIndex = weekPlan.days.firstIndex(where: { $0.id == dayID }) else { return }
         weekPlan.days[dayIndex].sessions.removeAll { $0.id == sessionID }
+        persistWeek()
     }
 
     private func dayIndex(for date: Date) -> Int? {
@@ -347,6 +361,32 @@ final class WeekPlannerViewModel: ObservableObject {
         }
         return WeekPlan(startOfWeek: start, days: days)
     }
+
+    private func persistWeek() {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted]
+        do {
+            let data = try encoder.encode(weekPlan)
+            try data.write(to: Self.storageURL, options: .atomic)
+        } catch {
+            print("Failed to persist week: \(error)")
+        }
+    }
+
+    private static func loadPersistedWeek() -> WeekPlan? {
+        let url = storageURL
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        do {
+            let data = try Data(contentsOf: url)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            return try decoder.decode(WeekPlan.self, from: data)
+        } catch {
+            print("Failed to load week: \(error)")
+            return nil
+        }
+    }
 }
 
 struct ContentView: View {
@@ -388,6 +428,8 @@ struct ContentView: View {
 struct WeekPlannerView: View {
     @ObservedObject var viewModel: WeekPlannerViewModel
     @ObservedObject var templatesViewModel: TemplateLibraryViewModel
+    @State private var showingTemplatePicker = false
+    @State private var templatePickerDate: Date?
 
     var body: some View {
         List {
@@ -397,21 +439,36 @@ struct WeekPlannerView: View {
                         Text("No sessions planned").foregroundStyle(.secondary)
                     } else {
                         ForEach(day.sessions) { session in
-                            SessionRow(
-                                session: session,
-                                onToggle: { viewModel.toggleStatus(sessionID: session.id) },
-                                onDelete: { viewModel.removeSession(dayID: day.id, sessionID: session.id) }
-                            )
+                            if session.kind == .strength {
+                                NavigationLink {
+                                    StrengthLogView(
+                                        session: session,
+                                        template: templatesViewModel.templates.first(where: { $0.name == session.templateName })
+                                    )
+                                } label: {
+                                    SessionRow(
+                                        session: session,
+                                        onToggle: { viewModel.toggleStatus(sessionID: session.id) },
+                                        onDelete: { viewModel.removeSession(dayID: day.id, sessionID: session.id) }
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            } else {
+                                SessionRow(
+                                    session: session,
+                                    onToggle: { viewModel.toggleStatus(sessionID: session.id) },
+                                    onDelete: { viewModel.removeSession(dayID: day.id, sessionID: session.id) }
+                                )
+                            }
                         }
                     }
 
-                    Menu("Add to day") {
-                        if let firstTemplate = templatesViewModel.templates.first {
-                            Button {
-                                viewModel.addStrengthSession(template: firstTemplate, on: day.date)
-                            } label: {
-                                Label("Strength from \(firstTemplate.name)", systemImage: SessionKind.strength.systemImage)
-                            }
+                    Menu("Add workout") {
+                        Button {
+                            templatePickerDate = day.date
+                            showingTemplatePicker = true
+                        } label: {
+                            Label("Strength (choose template)", systemImage: SessionKind.strength.systemImage)
                         }
                         Button {
                             viewModel.addRun(on: day.date, title: "Planned Run", planned: true)
@@ -428,6 +485,38 @@ struct WeekPlannerView: View {
             }
         }
         .navigationTitle("This Week")
+        .sheet(isPresented: $showingTemplatePicker) {
+            NavigationStack {
+                List {
+                    ForEach(templatesViewModel.templates) { template in
+                        Button {
+                            if let date = templatePickerDate {
+                                viewModel.addStrengthSession(template: template, on: date)
+                            }
+                            showingTemplatePicker = false
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(template.name)
+                                    .font(.body.weight(.semibold))
+                                if let note = template.note {
+                                    Text(note)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+                .navigationTitle("Select template")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            showingTemplatePicker = false
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private func dayHeader(for date: Date) -> String {
