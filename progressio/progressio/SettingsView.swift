@@ -39,7 +39,7 @@ struct SettingsView: View {
                         }
                         let start = Calendar.current.date(byAdding: .day, value: -7, to: Date())
                         HealthKitManager.shared.fetchRecentRuns(since: start) { runs in
-                            runs.forEach { weekViewModel.addUnattachedRun($0) }
+                            weekViewModel.importUnattachedRuns(runs)
                             importMessage = runs.isEmpty ? "No new runs found." : "Imported \(runs.count) run(s)."
                             isImporting = false
                         }
@@ -61,6 +61,19 @@ struct SettingsView: View {
             Section("Coming soon") {
                 Label("Attach detected runs to planned days", systemImage: "bolt.heart")
                 Label("Log strength sets with weight/reps/RPE", systemImage: "list.bullet.clipboard")
+            }
+            Section("Maintenance") {
+                Button(role: .destructive) {
+                    weekViewModel.clearUnattachedRuns()
+                } label: {
+                    Label("Clear imported runs", systemImage: "trash")
+                }
+                .disabled(weekViewModel.unattachedRuns.isEmpty)
+                if !weekViewModel.unattachedRuns.isEmpty {
+                    Text("Unattached runs: \(weekViewModel.unattachedRuns.count)")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .navigationTitle("Settings")

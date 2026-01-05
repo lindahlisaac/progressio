@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import SwiftUI
 import Combine
 
@@ -150,6 +151,7 @@ final class WeekPlannerViewModel: ObservableObject {
             persistWeek()
         }
         self.unattachedRuns = WeekPlannerViewModel.loadUnattachedRuns()
+        dedupeUnattachedRuns()
     }
 
     func addStrengthSession(template: StrengthTemplate, on date: Date) {
@@ -193,6 +195,19 @@ final class WeekPlannerViewModel: ObservableObject {
         persistWeek()
     }
 
+    func addCycle(on date: Date, title: String = "Ride", planned: Bool = true) {
+        guard let dayIndex = dayIndex(for: date) else { return }
+        weekPlan.days[dayIndex].sessions.append(
+            PlannedSession(
+                title: title,
+                kind: .cycle,
+                status: planned ? .planned : .unplanned,
+                note: planned ? "Planned ride" : "Logged ride"
+            )
+        )
+        persistWeek()
+    }
+
     func toggleStatus(sessionID: UUID) {
         for dayIdx in weekPlan.days.indices {
             if let sessionIndex = weekPlan.days[dayIdx].sessions.firstIndex(where: { $0.id == sessionID }) {
@@ -227,13 +242,84 @@ final class WeekPlannerViewModel: ObservableObject {
         }
     }
 
-    func updateRunDetail(sessionID: UUID, detail: RunDetailData, status: PlanStatus) {
+    func updateRunDetail(sessionID: UUID, detail: RunDetailData, status: PlanStatus, actualDistance: String? = nil, actualDuration: String? = nil) {
         for dayIdx in weekPlan.days.indices {
             if let sessionIndex = weekPlan.days[dayIdx].sessions.firstIndex(where: { $0.id == sessionID }) {
                 weekPlan.days[dayIdx].sessions[sessionIndex].runDetail = detail
                 weekPlan.days[dayIdx].sessions[sessionIndex].title = detail.title
                 weekPlan.days[dayIdx].sessions[sessionIndex].note = detail.notes.isEmpty ? weekPlan.days[dayIdx].sessions[sessionIndex].note : detail.notes
                 weekPlan.days[dayIdx].sessions[sessionIndex].status = status
+
+                if let actualDistance, !actualDistance.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    var actual = weekPlan.days[dayIdx].sessions[sessionIndex].actualRun
+                    let baseTitle = actual?.title ?? detail.title
+                    actual = RunDetailData(
+                        title: baseTitle,
+                        notes: actual?.notes ?? "",
+                        distance: actualDistance,
+                        duration: actual?.duration ?? "",
+                        averageHR: actual?.averageHR ?? "",
+                        category: detail.category,
+                        hkWorkoutUUID: actual?.hkWorkoutUUID
+                    )
+                    weekPlan.days[dayIdx].sessions[sessionIndex].actualRun = actual
+                } else if actualDistance != nil {
+                    // Explicit clear of distance
+                    if var actual = weekPlan.days[dayIdx].sessions[sessionIndex].actualRun {
+                        actual.distance = ""
+                        weekPlan.days[dayIdx].sessions[sessionIndex].actualRun = actual
+                    }
+                }
+
+                if let actualDuration {
+                    var actual = weekPlan.days[dayIdx].sessions[sessionIndex].actualRun ?? RunDetailData(title: detail.title, notes: "", distance: "", duration: "", averageHR: "", category: detail.category, hkWorkoutUUID: detail.hkWorkoutUUID)
+                    actual.duration = actualDuration
+                    weekPlan.days[dayIdx].sessions[sessionIndex].actualRun = actual
+                }
+
+                persistWeek()
+                break
+            }
+        }
+    }
+
+    func attachActualRun(to day: Date, run: UnattachedRun, toSessionID: UUID? = nil) {
+        guard let dayIndex = weekPlan.days.firstIndex(where: { calendar.isDate($0.date, inSameDayAs: day) }) else { return }
+        if let targetID = toSessionID,
+           let sessionIndex = weekPlan.days[dayIndex].sessions.firstIndex(where: { $0.id == targetID }) {
+            weekPlan.days[dayIndex].sessions[sessionIndex].actualRun = run.detail
+            weekPlan.days[dayIndex].sessions[sessionIndex].status = .completed
+        } else if let sessionIndex = weekPlan.days[dayIndex].sessions.firstIndex(where: { $0.kind == .run && $0.runDetail != nil && $0.actualRun == nil }) {
+            weekPlan.days[dayIndex].sessions[sessionIndex].actualRun = run.detail
+            weekPlan.days[dayIndex].sessions[sessionIndex].status = .completed
+        } else {
+            // No planned run; add as unplanned actual
+            var session = PlannedSession(
+                title: run.detail.title.isEmpty ? "Run" : run.detail.title,
+                kind: .run,
+                status: .completed,
+                note: "Imported from HealthKit",
+                templateName: nil,
+                runDetail: nil
+            )
+            session.actualRun = run.detail
+            weekPlan.days[dayIndex].sessions.append(session)
+        }
+        persistWeek()
+    }
+
+    func detachActualRun(sessionID: UUID) {
+        for dayIdx in weekPlan.days.indices {
+            if let sessionIndex = weekPlan.days[dayIdx].sessions.firstIndex(where: { $0.id == sessionID }) {
+                if let actual = weekPlan.days[dayIdx].sessions[sessionIndex].actualRun {
+                    let unattached = UnattachedRun(detail: actual, date: weekPlan.days[dayIdx].date, source: "Detached")
+                    addUnattachedRun(unattached)
+                }
+                weekPlan.days[dayIdx].sessions[sessionIndex].actualRun = nil
+                if weekPlan.days[dayIdx].sessions[sessionIndex].status == .completed,
+                   weekPlan.days[dayIdx].sessions[sessionIndex].runDetail == nil {
+                    weekPlan.days[dayIdx].sessions[sessionIndex].status = .planned
+                }
                 persistWeek()
                 break
             }
@@ -241,16 +327,48 @@ final class WeekPlannerViewModel: ObservableObject {
     }
 
     func addUnattachedRun(_ run: UnattachedRun) {
-        if let uuid = run.detail.hkWorkoutUUID, unattachedRuns.contains(where: { $0.detail.hkWorkoutUUID == uuid }) {
-            return
+        importUnattachedRuns([run])
+    }
+
+    func importUnattachedRuns(_ runs: [UnattachedRun]) {
+        var sigs = existingRunSignatures()
+        var added = false
+        for run in runs {
+            let sig = runSignature(for: run)
+            if sigs.insert(sig).inserted {
+                unattachedRuns.append(run)
+                added = true
+            }
         }
-        unattachedRuns.append(run)
-        persistUnattached()
+        if added {
+            dedupeUnattachedRuns()
+            persistUnattached()
+        }
     }
 
     func removeUnattachedRun(id: UUID) {
         unattachedRuns.removeAll { $0.id == id }
         persistUnattached()
+    }
+
+    func clearUnattachedRuns() {
+        unattachedRuns.removeAll()
+        persistUnattached()
+    }
+
+    func dedupeUnattachedRuns() {
+        var seen = Set<String>()
+        var unique: [UnattachedRun] = []
+        for run in unattachedRuns {
+            let sig = runSignature(for: run)
+            if seen.insert(sig).inserted {
+                unique.append(run)
+            }
+        }
+        if unique.count != unattachedRuns.count {
+            unattachedRuns = unique
+            persistUnattached()
+        }
     }
 
     private func persistUnattached() {
@@ -276,6 +394,93 @@ final class WeekPlannerViewModel: ObservableObject {
             print("Failed to load unattached runs: \(error)")
             return []
         }
+    }
+
+    private func hasAttachedRun(with uuid: String) -> Bool {
+        for day in weekPlan.days {
+            for session in day.sessions where session.kind == .run {
+                if session.runDetail?.hkWorkoutUUID == uuid { return true }
+                if session.actualRun?.hkWorkoutUUID == uuid { return true }
+            }
+        }
+        return false
+    }
+
+    private func runSignature(for run: UnattachedRun) -> String {
+        if let uuid = run.detail.hkWorkoutUUID?.lowercased() {
+            return "hk-\(uuid)"
+        }
+
+        let startSeconds = Int(run.date.timeIntervalSince1970)
+        let distanceValue = normalizedDistance(run.detail.distance)
+        let durationValue = normalizedDurationSeconds(run.detail.duration)
+        let title = run.detail.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let category = run.detail.category?.rawValue.lowercased() ?? ""
+
+        let components = [
+            "\(startSeconds)",
+            title,
+            distanceValue,
+            durationValue,
+            run.detail.averageHR ?? "",
+            category
+        ].joined(separator: "|")
+        return sha256Hex(of: components)
+    }
+
+    private func existingRunSignatures() -> Set<String> {
+        var sigs = Set<String>()
+        for unattached in unattachedRuns {
+            sigs.insert(runSignature(for: unattached))
+        }
+        for day in weekPlan.days {
+            for session in day.sessions where session.kind == .run {
+                if let uuid = session.runDetail?.hkWorkoutUUID?.lowercased() {
+                    sigs.insert("hk-\(uuid)")
+                }
+                if let uuid = session.actualRun?.hkWorkoutUUID?.lowercased() {
+                    sigs.insert("hk-\(uuid)")
+                }
+                if let detail = session.actualRun {
+                    let components = [
+                        "\(Int(day.date.timeIntervalSince1970))",
+                        detail.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+                        normalizedDistance(detail.distance),
+                        normalizedDurationSeconds(detail.duration),
+                        detail.averageHR ?? "",
+                        detail.category?.rawValue.lowercased() ?? ""
+                    ].joined(separator: "|")
+                    sigs.insert(sha256Hex(of: components))
+                }
+            }
+        }
+        return sigs
+    }
+
+    private func sha256Hex(of string: String) -> String {
+        let digest = SHA256.hash(data: Data(string.utf8))
+        return digest.compactMap { String(format: "%02x", $0) }.joined()
+    }
+
+    private func normalizedDistance(_ distance: String) -> String {
+        let filtered = distance.filter { "0123456789.,".contains($0) }.replacingOccurrences(of: ",", with: ".")
+        if let value = Double(filtered) {
+            return String(format: "%.2f", value)
+        }
+        return distance.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func normalizedDurationSeconds(_ duration: String) -> String {
+        let trimmed = duration.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parts = trimmed.split(separator: ":").compactMap { Int($0) }
+        if parts.count == 3 {
+            return "\(parts[0] * 3600 + parts[1] * 60 + parts[2])"
+        } else if parts.count == 2 {
+            return "\(parts[0] * 60 + parts[1])"
+        } else if let val = Int(trimmed) {
+            return "\(val)"
+        }
+        return trimmed
     }
 
     private func dayIndex(for date: Date) -> Int? {

@@ -1,12 +1,11 @@
 import SwiftUI
 
-struct RunDetailView: View {
+struct RideDetailView: View {
     let session: PlannedSession
     var onSave: ((RunDetailData, PlanStatus, String?, String?) -> Void)?
 
-    @State private var distance: String
-    @State private var actualDistance: String
-    @FocusState private var focusedField: Field?
+    @State private var plannedMiles: String
+    @State private var actualMiles: String
     @State private var plannedHours: Int
     @State private var plannedMinutes: Int
     @State private var plannedSeconds: Int
@@ -15,47 +14,44 @@ struct RunDetailView: View {
     @State private var actualSeconds: Int
     @State private var effortUnit: EffortUnit
     @State private var isCompleted: Bool
-    @State private var category: RunCategory = .easy
+    @FocusState private var focusedField: Field?
     @Environment(\.dismiss) private var dismiss
 
     init(session: PlannedSession, onSave: ((RunDetailData, PlanStatus, String?, String?) -> Void)? = nil) {
         self.session = session
         self.onSave = onSave
         let detail = session.runDetail
-        _distance = State(initialValue: detail?.distance ?? "")
-        _actualDistance = State(initialValue: session.actualRun?.distance ?? "")
+        _plannedMiles = State(initialValue: detail?.distance ?? "")
+        _actualMiles = State(initialValue: session.actualRun?.distance ?? "")
         let plannedDuration = detail?.duration ?? ""
-        let (ph, pm, ps) = RunDetailView.split(duration: plannedDuration)
+        let (ph, pm, ps) = RideDetailView.split(duration: plannedDuration)
         _plannedHours = State(initialValue: ph)
         _plannedMinutes = State(initialValue: pm)
         _plannedSeconds = State(initialValue: ps)
         let actualDuration = session.actualRun?.duration ?? ""
-        let (ah, am, as_) = RunDetailView.split(duration: actualDuration)
+        let (ah, am, as_) = RideDetailView.split(duration: actualDuration)
         _actualHours = State(initialValue: ah)
         _actualMinutes = State(initialValue: am)
         _actualSeconds = State(initialValue: as_)
         _effortUnit = State(initialValue: .miles)
         _isCompleted = State(initialValue: session.status == .completed)
-        _category = State(initialValue: detail?.category ?? .easy)
     }
 
     var body: some View {
         Form {
-            Section("Run Info") {
+            Section("Ride") {
                 Picker("Effort unit", selection: $effortUnit) {
                     ForEach(EffortUnit.allCases) { unit in
                         Text(unit.label).tag(unit)
                     }
                 }
                 .pickerStyle(.segmented)
-                .pickerStyle(.segmented)
-
                 if effortUnit == .miles {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Planned mileage (mi)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        TextField("Planned mileage (mi)", text: $distance)
+                        TextField("Planned mileage (mi)", text: $plannedMiles)
                             .keyboardType(.decimalPad)
                             .focused($focusedField, equals: .plannedMiles)
                     }
@@ -63,7 +59,7 @@ struct RunDetailView: View {
                         Text("Actual mileage (mi)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        TextField("Actual mileage (mi)", text: $actualDistance)
+                        TextField("Actual mileage (mi)", text: $actualMiles)
                             .keyboardType(.decimalPad)
                             .focused($focusedField, equals: .actualMiles)
                     }
@@ -81,18 +77,13 @@ struct RunDetailView: View {
                         durationPickers(hours: $actualHours, minutes: $actualMinutes, seconds: $actualSeconds)
                     }
                 }
-                Picker("Run type", selection: $category) {
-                    ForEach(RunCategory.allCases) { cat in
-                        Text(cat.rawValue).tag(cat)
-                    }
-                }
             }
 
             Section {
                 Toggle("Mark complete", isOn: $isCompleted)
             }
         }
-        .navigationTitle("Run Details")
+        .navigationTitle("Ride Details")
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") {
@@ -102,27 +93,27 @@ struct RunDetailView: View {
                         detail = RunDetailData(
                             title: base?.title ?? session.title,
                             notes: base?.notes ?? "",
-                            distance: distance,
+                            distance: plannedMiles,
                             duration: "",
                             averageHR: base?.averageHR ?? "",
-                            category: category,
+                            category: base?.category,
                             hkWorkoutUUID: base?.hkWorkoutUUID
                         )
                     } else {
-                        let plannedDurationString = RunDetailView.durationString(h: plannedHours, m: plannedMinutes, s: plannedSeconds)
+                        let plannedDurationString = RideDetailView.durationString(h: plannedHours, m: plannedMinutes, s: plannedSeconds)
                         detail = RunDetailData(
                             title: base?.title ?? session.title,
                             notes: base?.notes ?? "",
                             distance: "",
                             duration: plannedDurationString,
                             averageHR: base?.averageHR ?? "",
-                            category: category,
+                            category: base?.category,
                             hkWorkoutUUID: base?.hkWorkoutUUID
                         )
                     }
 
-                    let actualDistanceClean = actualDistance.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let actualDurationString = RunDetailView.durationString(h: actualHours, m: actualMinutes, s: actualSeconds)
+                    let actualDistanceClean = actualMiles.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let actualDurationString = RideDetailView.durationString(h: actualHours, m: actualMinutes, s: actualSeconds)
                     let actualDistanceValue: String? = effortUnit == .miles ? (actualDistanceClean.isEmpty ? nil : actualDistanceClean) : nil
                     let actualDurationValue: String? = effortUnit == .time ? actualDurationString : nil
 
@@ -182,4 +173,5 @@ struct RunDetailView: View {
         case actualMiles
     }
 }
+
 

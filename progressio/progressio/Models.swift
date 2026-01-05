@@ -3,6 +3,7 @@ import SwiftUI
 enum SessionKind: String, CaseIterable, Identifiable, Codable {
     case strength = "Strength"
     case run = "Run"
+    case cycle = "Cycle"
 
     var id: String { rawValue }
 
@@ -10,6 +11,7 @@ enum SessionKind: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .strength: return "dumbbell"
         case .run: return "figure.run"
+        case .cycle: return "bicycle"
         }
     }
 }
@@ -71,6 +73,7 @@ struct PlannedSession: Identifiable, Codable {
     var note: String?
     var templateName: String?
     var runDetail: RunDetailData?
+    var actualRun: RunDetailData?
 
     init(id: UUID = UUID(), title: String, kind: SessionKind, status: PlanStatus = .planned, note: String? = nil, templateName: String? = nil, runDetail: RunDetailData? = nil) {
         self.id = id
