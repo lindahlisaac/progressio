@@ -13,7 +13,7 @@ struct WeekPlannerView: View {
     var body: some View {
         List {
             unattachedRunsSection
-            mileageSection
+            weeklyReportSection
             daysSection
         }
         .navigationTitle("This Week")
@@ -111,20 +111,35 @@ struct WeekPlannerView: View {
         }
     }
 
-    private var mileageSection: some View {
-        Section("Run Mileage") {
+    private var weeklyReportSection: some View {
+        NavigationLink {
+            WeeklyReportView(
+                plannedRunMiles: plannedRunMiles,
+                completedRunMiles: completedRunMiles,
+                plannedRideMiles: plannedRideMiles,
+                completedRideMiles: completedRideMiles,
+                plannedStrengthCount: plannedStrengthCount,
+                completedStrengthCount: completedStrengthCount
+            )
+        } label: {
             HStack {
-                Label("Completed", systemImage: "checkmark.circle")
+                Label("Weekly report", systemImage: "chart.bar.doc.horizontal")
                 Spacer()
-                Text(String(format: "%.1f mi", completedRunMiles))
-                    .bold()
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text(String(format: "Run %.1f/%.1f mi", completedRunMiles, plannedRunMiles))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(String(format: "Ride %.1f/%.1f mi", completedRideMiles, plannedRideMiles))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("Strength \(completedStrengthCount)/\(plannedStrengthCount)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Image(systemName: "chevron.right")
+                    .foregroundStyle(.secondary)
             }
-            HStack {
-                Label("Planned", systemImage: "figure.run")
-                Spacer()
-                Text(String(format: "%.1f mi", plannedRunMiles))
-                    .bold()
-            }
+            .padding(.vertical, 4)
         }
     }
 
@@ -199,15 +214,15 @@ struct WeekPlannerView: View {
         } else if session.kind == .run {
             RunDetailView(
                 session: session,
-                onSave: { detail, status, actualDistance, actualDuration in
-                    viewModel.updateRunDetail(sessionID: session.id, detail: detail, status: status, actualDistance: actualDistance, actualDuration: actualDuration)
+                onSave: { detail, status, actualDistance, actualDuration, actualElevation in
+                    viewModel.updateRunDetail(sessionID: session.id, detail: detail, status: status, actualDistance: actualDistance, actualDuration: actualDuration, actualElevation: actualElevation)
                 }
             )
         } else {
             RideDetailView(
                 session: session,
-                onSave: { detail, status, actualDistance, actualDuration in
-                    viewModel.updateRunDetail(sessionID: session.id, detail: detail, status: status, actualDistance: actualDistance, actualDuration: actualDuration)
+                onSave: { detail, status, actualDistance, actualDuration, actualElevation in
+                    viewModel.updateRunDetail(sessionID: session.id, detail: detail, status: status, actualDistance: actualDistance, actualDuration: actualDuration, actualElevation: actualElevation)
                 }
             )
         }
@@ -231,10 +246,35 @@ struct WeekPlannerView: View {
     private var completedRunMiles: Double {
         let sessions = viewModel.weekPlan.days.flatMap { $0.sessions }
         let runs = sessions.filter { $0.kind == .run && $0.status == .completed }
-        let total = runs.reduce(0.0) { partial, session in
+        return runs.reduce(0.0) { partial, session in
+            partial + miles(from: session.actualRun?.distance ?? session.runDetail?.distance)
+        }
+    }
+
+    private var plannedRideMiles: Double {
+        let sessions = viewModel.weekPlan.days.flatMap { $0.sessions }
+        let rides = sessions.filter { $0.kind == .cycle }
+        return rides.reduce(0.0) { partial, session in
             partial + miles(from: session.runDetail?.distance)
         }
-        return total
+    }
+
+    private var completedRideMiles: Double {
+        let sessions = viewModel.weekPlan.days.flatMap { $0.sessions }
+        let rides = sessions.filter { $0.kind == .cycle && $0.status == .completed }
+        return rides.reduce(0.0) { partial, session in
+            partial + miles(from: session.actualRun?.distance ?? session.runDetail?.distance)
+        }
+    }
+
+    private var plannedStrengthCount: Int {
+        let sessions = viewModel.weekPlan.days.flatMap { $0.sessions }
+        return sessions.filter { $0.kind == .strength }.count
+    }
+
+    private var completedStrengthCount: Int {
+        let sessions = viewModel.weekPlan.days.flatMap { $0.sessions }
+        return sessions.filter { $0.kind == .strength && $0.status == .completed }.count
     }
 
     private func miles(from distanceString: String?) -> Double {
@@ -301,18 +341,16 @@ struct SessionRow: View {
                                     .font(.caption)
                                     .foregroundStyle(.primary)
                             }
-                            Text("Actual")
-                                .font(.caption2.weight(.semibold))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color.green.opacity(0.18))
-                                .foregroundStyle(Color.green)
-                                .clipShape(Capsule())
                         }
                         if let planned = session.runDetail, !planned.distance.isEmpty {
                             Text("Planned \(planned.distance) mi")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                        }
+                        if session.kind == .run, let cat = session.runDetail?.category ?? session.actualRun?.category {
+                            chip(text: cat.rawValue, color: .blue)
+                        } else if session.kind == .cycle {
+                            chip(text: "Ride", color: .orange)
                         }
                     } else if let planned = session.runDetail {
                         HStack(spacing: 6) {
@@ -321,16 +359,10 @@ struct SessionRow: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
-                            if session.kind == .run {
-                                if let cat = planned.category {
-                                    Text(cat.rawValue)
-                                        .font(.caption2.weight(.semibold))
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .background(Color.blue.opacity(0.12))
-                                        .foregroundStyle(Color.blue)
-                                        .clipShape(Capsule())
-                                }
+                            if session.kind == .run, let cat = planned.category {
+                                chip(text: cat.rawValue, color: .blue)
+                            } else if session.kind == .cycle {
+                                chip(text: "Ride", color: .orange)
                             }
                         }
                     }
@@ -388,5 +420,15 @@ private func color(for kind: SessionKind) -> Color {
     case .cycle:
         return .orange
     }
+}
+
+private func chip(text: String, color: Color) -> some View {
+    Text(text)
+        .font(.caption2.weight(.semibold))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(color.opacity(0.12))
+        .foregroundStyle(color)
+        .clipShape(Capsule())
 }
 

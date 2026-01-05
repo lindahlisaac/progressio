@@ -102,7 +102,8 @@ final class HealthKitManager {
             duration: durationString,
             averageHR: avgHR,
             category: nil,
-            hkWorkoutUUID: workout.uuid.uuidString
+            hkWorkoutUUID: workout.uuid.uuidString,
+            elevationGain: nil
         )
 
         return UnattachedRun(detail: detail, date: workout.startDate, source: workout.sourceRevision.source.name)

@@ -242,7 +242,7 @@ final class WeekPlannerViewModel: ObservableObject {
         }
     }
 
-    func updateRunDetail(sessionID: UUID, detail: RunDetailData, status: PlanStatus, actualDistance: String? = nil, actualDuration: String? = nil) {
+    func updateRunDetail(sessionID: UUID, detail: RunDetailData, status: PlanStatus, actualDistance: String? = nil, actualDuration: String? = nil, actualElevation: String? = nil) {
         for dayIdx in weekPlan.days.indices {
             if let sessionIndex = weekPlan.days[dayIdx].sessions.firstIndex(where: { $0.id == sessionID }) {
                 weekPlan.days[dayIdx].sessions[sessionIndex].runDetail = detail
@@ -260,7 +260,8 @@ final class WeekPlannerViewModel: ObservableObject {
                         duration: actual?.duration ?? "",
                         averageHR: actual?.averageHR ?? "",
                         category: detail.category,
-                        hkWorkoutUUID: actual?.hkWorkoutUUID
+                        hkWorkoutUUID: actual?.hkWorkoutUUID,
+                        elevationGain: actual?.elevationGain
                     )
                     weekPlan.days[dayIdx].sessions[sessionIndex].actualRun = actual
                 } else if actualDistance != nil {
@@ -274,6 +275,12 @@ final class WeekPlannerViewModel: ObservableObject {
                 if let actualDuration {
                     var actual = weekPlan.days[dayIdx].sessions[sessionIndex].actualRun ?? RunDetailData(title: detail.title, notes: "", distance: "", duration: "", averageHR: "", category: detail.category, hkWorkoutUUID: detail.hkWorkoutUUID)
                     actual.duration = actualDuration
+                    weekPlan.days[dayIdx].sessions[sessionIndex].actualRun = actual
+                }
+
+                if let actualElevation {
+                    var actual = weekPlan.days[dayIdx].sessions[sessionIndex].actualRun ?? RunDetailData(title: detail.title, notes: "", distance: "", duration: "", averageHR: "", category: detail.category, hkWorkoutUUID: detail.hkWorkoutUUID)
+                    actual.elevationGain = actualElevation
                     weekPlan.days[dayIdx].sessions[sessionIndex].actualRun = actual
                 }
 

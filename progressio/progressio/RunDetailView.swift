@@ -2,10 +2,12 @@ import SwiftUI
 
 struct RunDetailView: View {
     let session: PlannedSession
-    var onSave: ((RunDetailData, PlanStatus, String?, String?) -> Void)?
+    var onSave: ((RunDetailData, PlanStatus, String?, String?, String?) -> Void)?
 
     @State private var distance: String
     @State private var actualDistance: String
+    @State private var plannedElevation: String
+    @State private var actualElevation: String
     @FocusState private var focusedField: Field?
     @State private var plannedHours: Int
     @State private var plannedMinutes: Int
@@ -18,12 +20,14 @@ struct RunDetailView: View {
     @State private var category: RunCategory = .easy
     @Environment(\.dismiss) private var dismiss
 
-    init(session: PlannedSession, onSave: ((RunDetailData, PlanStatus, String?, String?) -> Void)? = nil) {
+    init(session: PlannedSession, onSave: ((RunDetailData, PlanStatus, String?, String?, String?) -> Void)? = nil) {
         self.session = session
         self.onSave = onSave
         let detail = session.runDetail
         _distance = State(initialValue: detail?.distance ?? "")
         _actualDistance = State(initialValue: session.actualRun?.distance ?? "")
+        _plannedElevation = State(initialValue: detail?.elevationGain ?? "")
+        _actualElevation = State(initialValue: session.actualRun?.elevationGain ?? "")
         let plannedDuration = detail?.duration ?? ""
         let (ph, pm, ps) = RunDetailView.split(duration: plannedDuration)
         _plannedHours = State(initialValue: ph)
@@ -41,14 +45,19 @@ struct RunDetailView: View {
 
     var body: some View {
         Form {
-            Section("Run Info") {
+            Section("Planned") {
                 Picker("Effort unit", selection: $effortUnit) {
                     ForEach(EffortUnit.allCases) { unit in
                         Text(unit.label).tag(unit)
                     }
                 }
                 .pickerStyle(.segmented)
-                .pickerStyle(.segmented)
+
+                Picker("Run type", selection: $category) {
+                    ForEach(RunCategory.allCases) { cat in
+                        Text(cat.rawValue).tag(cat)
+                    }
+                }
 
                 if effortUnit == .miles {
                     VStack(alignment: .leading, spacing: 4) {
@@ -59,6 +68,26 @@ struct RunDetailView: View {
                             .keyboardType(.decimalPad)
                             .focused($focusedField, equals: .plannedMiles)
                     }
+                } else {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Planned duration")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        durationPickers(hours: $plannedHours, minutes: $plannedMinutes, seconds: $plannedSeconds)
+                    }
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Planned elevation gain (ft)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("Planned elevation gain", text: $plannedElevation)
+                        .keyboardType(.numberPad)
+                        .focused($focusedField, equals: .plannedElevation)
+                }
+            }
+
+            Section("Actual") {
+                if effortUnit == .miles {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Actual mileage (mi)")
                             .font(.caption)
@@ -69,22 +98,19 @@ struct RunDetailView: View {
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Planned duration")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        durationPickers(hours: $plannedHours, minutes: $plannedMinutes, seconds: $plannedSeconds)
-                    }
-                    VStack(alignment: .leading, spacing: 4) {
                         Text("Actual duration")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         durationPickers(hours: $actualHours, minutes: $actualMinutes, seconds: $actualSeconds)
                     }
                 }
-                Picker("Run type", selection: $category) {
-                    ForEach(RunCategory.allCases) { cat in
-                        Text(cat.rawValue).tag(cat)
-                    }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Actual elevation gain (ft)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("Actual elevation gain", text: $actualElevation)
+                        .keyboardType(.numberPad)
+                        .focused($focusedField, equals: .actualElevation)
                 }
             }
 
@@ -96,37 +122,7 @@ struct RunDetailView: View {
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") {
-                    let base = session.runDetail
-                    let detail: RunDetailData
-                    if effortUnit == .miles {
-                        detail = RunDetailData(
-                            title: base?.title ?? session.title,
-                            notes: base?.notes ?? "",
-                            distance: distance,
-                            duration: "",
-                            averageHR: base?.averageHR ?? "",
-                            category: category,
-                            hkWorkoutUUID: base?.hkWorkoutUUID
-                        )
-                    } else {
-                        let plannedDurationString = RunDetailView.durationString(h: plannedHours, m: plannedMinutes, s: plannedSeconds)
-                        detail = RunDetailData(
-                            title: base?.title ?? session.title,
-                            notes: base?.notes ?? "",
-                            distance: "",
-                            duration: plannedDurationString,
-                            averageHR: base?.averageHR ?? "",
-                            category: category,
-                            hkWorkoutUUID: base?.hkWorkoutUUID
-                        )
-                    }
-
-                    let actualDistanceClean = actualDistance.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let actualDurationString = RunDetailView.durationString(h: actualHours, m: actualMinutes, s: actualSeconds)
-                    let actualDistanceValue: String? = effortUnit == .miles ? (actualDistanceClean.isEmpty ? nil : actualDistanceClean) : nil
-                    let actualDurationValue: String? = effortUnit == .time ? actualDurationString : nil
-
-                    onSave?(detail, isCompleted ? .completed : .planned, actualDistanceValue, actualDurationValue)
+                    save(statusOverride: nil, dismissAfter: true)
                     dismiss()
                 }
             }
@@ -134,6 +130,9 @@ struct RunDetailView: View {
                 Spacer()
                 Button("Done") { focusedField = nil }
             }
+        }
+        .onChange(of: isCompleted) { _ in
+            save(statusOverride: isCompleted ? .completed : .planned, dismissAfter: false)
         }
     }
 
@@ -180,6 +179,50 @@ struct RunDetailView: View {
     private enum Field {
         case plannedMiles
         case actualMiles
+        case plannedElevation
+        case actualElevation
+    }
+
+    private func save(statusOverride: PlanStatus?, dismissAfter: Bool) {
+        let base = session.runDetail
+        let detail: RunDetailData
+        if effortUnit == .miles {
+            detail = RunDetailData(
+                title: base?.title ?? session.title,
+                notes: base?.notes ?? "",
+                distance: distance,
+                duration: "",
+                averageHR: base?.averageHR ?? "",
+                category: category,
+                hkWorkoutUUID: base?.hkWorkoutUUID,
+                elevationGain: plannedElevation
+            )
+        } else {
+            let plannedDurationString = RunDetailView.durationString(h: plannedHours, m: plannedMinutes, s: plannedSeconds)
+            detail = RunDetailData(
+                title: base?.title ?? session.title,
+                notes: base?.notes ?? "",
+                distance: "",
+                duration: plannedDurationString,
+                averageHR: base?.averageHR ?? "",
+                category: category,
+                hkWorkoutUUID: base?.hkWorkoutUUID,
+                elevationGain: plannedElevation
+            )
+        }
+
+        let actualDistanceClean = actualDistance.trimmingCharacters(in: .whitespacesAndNewlines)
+        let actualDurationString = RunDetailView.durationString(h: actualHours, m: actualMinutes, s: actualSeconds)
+        let actualDistanceValue: String? = effortUnit == .miles ? (actualDistanceClean.isEmpty ? nil : actualDistanceClean) : nil
+        let actualDurationValue: String? = effortUnit == .time ? actualDurationString : nil
+        let actualElevationClean = actualElevation.trimmingCharacters(in: .whitespacesAndNewlines)
+        let actualElevationValue: String? = actualElevationClean.isEmpty ? nil : actualElevationClean
+
+        let status = statusOverride ?? (isCompleted ? .completed : .planned)
+        onSave?(detail, status, actualDistanceValue, actualDurationValue, actualElevationValue)
+        if dismissAfter {
+            dismiss()
+        }
     }
 }
 

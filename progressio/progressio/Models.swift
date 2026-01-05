@@ -63,6 +63,7 @@ struct RunDetailData: Codable, Equatable {
     var averageHR: String
     var category: RunCategory?
     var hkWorkoutUUID: String?
+    var elevationGain: String?
 }
 
 struct PlannedSession: Identifiable, Codable {
