@@ -66,6 +66,53 @@ struct RunDetailData: Codable, Equatable {
     var elevationGain: String?
 }
 
+struct SetLog: Identifiable, Codable, Equatable {
+    let id: UUID
+    var weight: String
+    var reps: String
+    var repHint: String
+    
+    init(id: UUID = UUID(), weight: String = "", reps: String = "", repHint: String = "") {
+        self.id = id
+        self.weight = weight
+        self.reps = reps
+        self.repHint = repHint
+    }
+}
+
+struct ExerciseLog: Identifiable, Codable, Equatable {
+    let id: UUID
+    var name: String
+    var sets: [SetLog]
+    var rpe: String
+    
+    init(id: UUID = UUID(), name: String, sets: [SetLog], rpe: String = "") {
+        self.id = id
+        self.name = name
+        self.sets = sets
+        self.rpe = rpe
+    }
+}
+
+struct StrengthLogState: Codable {
+    var sessionID: UUID
+    var exercises: [ExerciseLog]
+    var isCompleted: Bool
+
+    init(sessionID: UUID, exercises: [ExerciseLog], isCompleted: Bool = false) {
+        self.sessionID = sessionID
+        self.exercises = exercises
+        self.isCompleted = isCompleted
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sessionID = try container.decode(UUID.self, forKey: .sessionID)
+        exercises = try container.decode([ExerciseLog].self, forKey: .exercises)
+        isCompleted = try container.decodeIfPresent(Bool.self, forKey: .isCompleted) ?? false
+    }
+}
+
 struct PlannedSession: Identifiable, Codable {
     let id: UUID
     var title: String
@@ -75,8 +122,9 @@ struct PlannedSession: Identifiable, Codable {
     var templateName: String?
     var runDetail: RunDetailData?
     var actualRun: RunDetailData?
+    var strengthLog: StrengthLogState?
 
-    init(id: UUID = UUID(), title: String, kind: SessionKind, status: PlanStatus = .planned, note: String? = nil, templateName: String? = nil, runDetail: RunDetailData? = nil) {
+    init(id: UUID = UUID(), title: String, kind: SessionKind, status: PlanStatus = .planned, note: String? = nil, templateName: String? = nil, runDetail: RunDetailData? = nil, strengthLog: StrengthLogState? = nil) {
         self.id = id
         self.title = title
         self.kind = kind
@@ -84,6 +132,7 @@ struct PlannedSession: Identifiable, Codable {
         self.note = note
         self.templateName = templateName
         self.runDetail = runDetail
+        self.strengthLog = strengthLog
     }
 }
 

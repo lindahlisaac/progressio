@@ -1,39 +1,6 @@
 import SwiftUI
 
 struct StrengthLogView: View {
-    struct SetLog: Identifiable, Codable, Equatable {
-        let id = UUID()
-        var weight: String
-        var reps: String
-        var repHint: String
-    }
-
-    struct ExerciseLog: Identifiable, Codable, Equatable {
-        let id = UUID()
-        var name: String
-        var sets: [SetLog]
-        var rpe: String
-    }
-
-    private struct StrengthLogState: Codable {
-        var sessionID: UUID
-        var exercises: [ExerciseLog]
-        var isCompleted: Bool
-
-        init(sessionID: UUID, exercises: [ExerciseLog], isCompleted: Bool) {
-            self.sessionID = sessionID
-            self.exercises = exercises
-            self.isCompleted = isCompleted
-        }
-
-        init(from decoder: Decoder) throws {
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            sessionID = try container.decode(UUID.self, forKey: .sessionID)
-            exercises = try container.decode([ExerciseLog].self, forKey: .exercises)
-            isCompleted = try container.decodeIfPresent(Bool.self, forKey: .isCompleted) ?? false
-        }
-    }
-
     let session: PlannedSession
     @State private var exercises: [ExerciseLog]
     private let initialExercises: [ExerciseLog]
@@ -49,7 +16,7 @@ struct StrengthLogView: View {
     @State private var showingResetConfirm = false
 
     private struct ExerciseSection: View {
-        @Binding var exercise: StrengthLogView.ExerciseLog
+        @Binding var exercise: ExerciseLog
         var removeSets: (IndexSet, UUID) -> Void
         var addSet: (UUID) -> Void
         var isInputFocused: FocusState<Bool>.Binding
@@ -325,7 +292,7 @@ struct StrengthLogView: View {
 }
 
 private struct SetRow: View {
-    @Binding var set: StrengthLogView.SetLog
+    @Binding var set: SetLog
     var isInputFocused: FocusState<Bool>.Binding
     var onChanged: () -> Void
     var isLocked: Bool

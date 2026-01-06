@@ -669,29 +669,97 @@ final class WeekPlannerViewModel: ObservableObject {
 
     func exportCurrentWeek() -> URL? {
         do {
+            // Create a copy of weekPlan with strength logs included
+            var exportPlan = weekPlan
+            var strengthLogsIncluded = 0
+            
+            for dayIdx in exportPlan.days.indices {
+                for sessionIdx in exportPlan.days[dayIdx].sessions.indices {
+                    let session = exportPlan.days[dayIdx].sessions[sessionIdx]
+                    
+                    // Load strength log if this is a strength session
+                    if session.kind == .strength {
+                        let logURL = Self.strengthLogURL(for: session.id)
+                        if FileManager.default.fileExists(atPath: logURL.path) {
+                            do {
+                                let logData = try Data(contentsOf: logURL)
+                                let decoder = JSONDecoder()
+                                let strengthLog = try decoder.decode(StrengthLogState.self, from: logData)
+                                exportPlan.days[dayIdx].sessions[sessionIdx].strengthLog = strengthLog
+                                strengthLogsIncluded += 1
+                            } catch {
+                                print("⚠️ Failed to load strength log for session \(session.id): \(error)")
+                            }
+                        }
+                    }
+                }
+            }
+            
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
-            let data = try encoder.encode(weekPlan)
+            encoder.outputFormatting = [.prettyPrinted]
+            let data = try encoder.encode(exportPlan)
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("weekplan-\(Self.isoDate(currentStartOfWeek)).json")
             try data.write(to: url, options: .atomic)
+            print("📤 Exported week to: \(url.path)")
+            print("   Days: \(exportPlan.days.count)")
+            print("   Total sessions: \(exportPlan.days.flatMap { $0.sessions }.count)")
+            print("   Strength logs included: \(strengthLogsIncluded)")
             return url
         } catch {
-            print("Failed to export week: \(error)")
+            print("❌ Failed to export week: \(error)")
             return nil
         }
     }
+    
+    private static func strengthLogURL(for sessionID: UUID) -> URL {
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return documentsPath.appendingPathComponent("strengthlog-\(sessionID.uuidString).json")
+    }
 
     func importWeek(from url: URL) {
+        // Start accessing security-scoped resource
+        guard url.startAccessingSecurityScopedResource() else {
+            print("❌ Failed to access security-scoped resource")
+            return
+        }
+        defer { url.stopAccessingSecurityScopedResource() }
+        
         do {
             let data = try Data(contentsOf: url)
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
             let imported = try decoder.decode(WeekPlan.self, from: data)
+            print("✅ Successfully decoded WeekPlan with \(imported.days.count) days")
+            print("   Start of week: \(imported.startOfWeek)")
+            print("   Total sessions: \(imported.days.flatMap { $0.sessions }.count)")
+            
+            // Restore strength logs for strength sessions
+            var strengthLogsRestored = 0
+            for day in imported.days {
+                for session in day.sessions {
+                    if session.kind == .strength, let strengthLog = session.strengthLog {
+                        let logURL = Self.strengthLogURL(for: session.id)
+                        do {
+                            let encoder = JSONEncoder()
+                            encoder.outputFormatting = [.prettyPrinted]
+                            let logData = try encoder.encode(strengthLog)
+                            try logData.write(to: logURL, options: .atomic)
+                            strengthLogsRestored += 1
+                        } catch {
+                            print("⚠️ Failed to restore strength log for session \(session.id): \(error)")
+                        }
+                    }
+                }
+            }
+            
             self.weekPlan = imported
             self.currentStartOfWeek = imported.startOfWeek
             persistWeek(for: imported.startOfWeek)
+            print("💾 Imported week persisted")
+            print("   Strength logs restored: \(strengthLogsRestored)")
         } catch {
-            print("Failed to import week: \(error)")
+            print("❌ Failed to import week: \(error)")
         }
     }
 

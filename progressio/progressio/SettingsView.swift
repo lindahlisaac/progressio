@@ -8,6 +8,7 @@ struct SettingsView: View {
     @State private var importMessage: String?
     @State private var exportURL: URL?
     @State private var showingWeekImporter = false
+    @State private var weekImportMessage: String?
 
     var body: some View {
         List {
@@ -81,6 +82,7 @@ struct SettingsView: View {
             Section("Week data") {
                 Button {
                     exportURL = weekViewModel.exportCurrentWeek()
+                    weekImportMessage = "Week exported successfully"
                 } label: {
                     Label("Export current week", systemImage: "square.and.arrow.up")
                 }
@@ -94,8 +96,8 @@ struct SettingsView: View {
                 } label: {
                     Label("Import week from file", systemImage: "square.and.arrow.down")
                 }
-                if let importMessage {
-                    Text(importMessage)
+                if let weekImportMessage {
+                    Text(weekImportMessage)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -105,10 +107,12 @@ struct SettingsView: View {
         .fileImporter(isPresented: $showingWeekImporter, allowedContentTypes: [.json]) { result in
             switch result {
             case .success(let url):
+                print("📂 File selected: \(url.lastPathComponent)")
                 weekViewModel.importWeek(from: url)
-                importMessage = "Imported week from \(url.lastPathComponent)"
+                weekImportMessage = "Week imported successfully from \(url.lastPathComponent)"
             case .failure(let error):
-                importMessage = "Import failed: \(error.localizedDescription)"
+                print("❌ File import error: \(error.localizedDescription)")
+                weekImportMessage = "Import failed: \(error.localizedDescription)"
             }
         }
     }
