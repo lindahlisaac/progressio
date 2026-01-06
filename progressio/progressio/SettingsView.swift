@@ -1,10 +1,13 @@
 import SwiftUI
 import HealthKit
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @ObservedObject var weekViewModel: WeekPlannerViewModel
     @State private var isImporting = false
     @State private var importMessage: String?
+    @State private var exportURL: URL?
+    @State private var showingWeekImporter = false
 
     var body: some View {
         List {
@@ -75,8 +78,39 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            Section("Week data") {
+                Button {
+                    exportURL = weekViewModel.exportCurrentWeek()
+                } label: {
+                    Label("Export current week", systemImage: "square.and.arrow.up")
+                }
+                if let exportURL {
+                    ShareLink(item: exportURL) {
+                        Label("Share exported file", systemImage: "square.and.arrow.up.on.square")
+                    }
+                }
+                Button {
+                    showingWeekImporter = true
+                } label: {
+                    Label("Import week from file", systemImage: "square.and.arrow.down")
+                }
+                if let importMessage {
+                    Text(importMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
         .navigationTitle("Settings")
+        .fileImporter(isPresented: $showingWeekImporter, allowedContentTypes: [.json]) { result in
+            switch result {
+            case .success(let url):
+                weekViewModel.importWeek(from: url)
+                importMessage = "Imported week from \(url.lastPathComponent)"
+            case .failure(let error):
+                importMessage = "Import failed: \(error.localizedDescription)"
+            }
+        }
     }
 }
 

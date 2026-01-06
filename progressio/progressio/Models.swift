@@ -104,6 +104,32 @@ struct WeekPlan: Codable {
     var days: [DayPlan]
 }
 
+struct WeeklyTemplate: Identifiable, Codable {
+    let id: UUID
+    var name: String
+    var note: String?
+    var days: [DayTemplate]
+
+    init(id: UUID = UUID(), name: String, note: String? = nil, days: [DayTemplate]) {
+        self.id = id
+        self.name = name
+        self.note = note
+        self.days = days
+    }
+}
+
+struct DayTemplate: Identifiable, Codable {
+    let id: UUID
+    var weekday: Int // 1 = Sunday ... 7 = Saturday
+    var sessions: [PlannedSession]
+
+    init(id: UUID = UUID(), weekday: Int, sessions: [PlannedSession] = []) {
+        self.id = id
+        self.weekday = weekday
+        self.sessions = sessions
+    }
+}
+
 struct StrengthTemplate: Identifiable, Codable {
     let id: UUID
     var name: String

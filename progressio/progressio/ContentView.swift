@@ -20,7 +20,7 @@ struct ContentView: View {
             }
 
             NavigationStack {
-                TemplateLibraryView(viewModel: templatesViewModel)
+                TemplateLibraryView(viewModel: templatesViewModel, weekViewModel: weekViewModel)
             }
             .tabItem {
                 Label("Templates", systemImage: "list.bullet.rectangle")

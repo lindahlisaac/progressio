@@ -9,6 +9,9 @@ struct WeekPlannerView: View {
     @State private var hasStartedHKObserver = false
     @State private var previousUnattachedCount: Int = 0
     @State private var showingUnattachedSheet = false
+    @State private var showingWeeklyTemplatePicker = false
+    @State private var showingApplyTemplateAlert = false
+    @State private var selectedWeeklyTemplate: WeeklyTemplate?
 
     var body: some View {
         List {
@@ -17,6 +20,29 @@ struct WeekPlannerView: View {
             daysSection
         }
         .navigationTitle("This Week")
+        .toolbar {
+            ToolbarItemGroup(placement: .navigationBarLeading) {
+                Button {
+                    viewModel.goToPreviousWeek(templates: templatesViewModel.templates)
+                } label: {
+                    Image(systemName: "chevron.left")
+                }
+            }
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                Button {
+                    showingWeeklyTemplatePicker = true
+                } label: {
+                    Image(systemName: "calendar.badge.plus")
+                }
+                .disabled(viewModel.weeklyTemplates.isEmpty)
+                
+                Button {
+                    viewModel.goToNextWeek(templates: templatesViewModel.templates)
+                } label: {
+                    Image(systemName: "chevron.right")
+                }
+            }
+        }
         .onAppear {
             viewModel.dedupeUnattachedRuns()
             startHealthKitObserverIfNeeded()
@@ -74,6 +100,63 @@ struct WeekPlannerView: View {
                             Button("Close") { showingUnattachedSheet = false }
                         }
                     }
+            }
+        }
+        .sheet(isPresented: $showingWeeklyTemplatePicker) {
+            NavigationStack {
+                List {
+                    ForEach(viewModel.weeklyTemplates) { template in
+                        Button {
+                            selectedWeeklyTemplate = template
+                            showingWeeklyTemplatePicker = false
+                            showingApplyTemplateAlert = true
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(template.name)
+                                    .font(.body.weight(.semibold))
+                                    .foregroundColor(.primary)
+                                if let note = template.note, !note.isEmpty {
+                                    Text(note)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Text("\(template.days.flatMap { $0.sessions }.count) workouts")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+                .navigationTitle("Apply Weekly Template")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            showingWeeklyTemplatePicker = false
+                        }
+                    }
+                }
+            }
+        }
+        .alert("Apply Template to Current Week?", isPresented: $showingApplyTemplateAlert, presenting: selectedWeeklyTemplate) { template in
+            if viewModel.hasWorkoutsInCurrentWeek() {
+                Button("Override existing") {
+                    viewModel.applyWeeklyTemplate(template, to: viewModel.currentStartOfWeek, keepExisting: false)
+                }
+                Button("Keep existing") {
+                    viewModel.applyWeeklyTemplate(template, to: viewModel.currentStartOfWeek, keepExisting: true)
+                }
+                Button("Cancel", role: .cancel) { }
+            } else {
+                Button("Apply") {
+                    viewModel.applyWeeklyTemplate(template, to: viewModel.currentStartOfWeek, keepExisting: false)
+                }
+                Button("Cancel", role: .cancel) { }
+            }
+        } message: { template in
+            if viewModel.hasWorkoutsInCurrentWeek() {
+                Text("You have existing workouts this week. Choose to override them or keep them alongside '\(template.name)'.")
+            } else {
+                Text("This will apply '\(template.name)' to the current week.")
             }
         }
     }

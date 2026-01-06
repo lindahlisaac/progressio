@@ -131,27 +131,58 @@ final class WeekPlannerViewModel: ObservableObject {
     private let calendar: Calendar
 
     @Published var weekPlan: WeekPlan
+    @Published var currentStartOfWeek: Date
     @Published var unattachedRuns: [UnattachedRun] = []
-    private static var storageURL: URL = {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        return docs.appendingPathComponent("weekplan.json")
-    }()
+    @Published var weeklyTemplates: [WeeklyTemplate] = []
     private static var unattachedURL: URL = {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         return docs.appendingPathComponent("unattachedRuns.json")
     }()
+    private static var weeklyTemplatesURL: URL = {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        return docs.appendingPathComponent("weeklyTemplates.json")
+    }()
 
     init(calendar: Calendar = .current, templates: [StrengthTemplate]) {
         self.calendar = calendar
-        if let loaded = WeekPlannerViewModel.loadPersistedWeek() {
+        let start = calendar.startOfWeek(for: Date())
+        self.currentStartOfWeek = start
+        if let loaded = WeekPlannerViewModel.loadPersistedWeek(for: start) {
             self.weekPlan = loaded
         } else {
-            let sample = WeekPlannerViewModel.makeSampleWeek(calendar: calendar, templates: templates)
+            let sample = WeekPlannerViewModel.makeSampleWeek(calendar: calendar, templates: templates, start: start)
             self.weekPlan = sample
             persistWeek()
         }
         self.unattachedRuns = WeekPlannerViewModel.loadUnattachedRuns()
+        self.weeklyTemplates = WeekPlannerViewModel.loadWeeklyTemplates()
         dedupeUnattachedRuns()
+    }
+
+    func goToPreviousWeek(templates: [StrengthTemplate]) {
+        guard let newStart = calendar.date(byAdding: .day, value: -7, to: currentStartOfWeek) else { return }
+        loadWeek(startDate: newStart, templates: templates)
+    }
+
+    func goToNextWeek(templates: [StrengthTemplate]) {
+        guard let newStart = calendar.date(byAdding: .day, value: 7, to: currentStartOfWeek) else { return }
+        loadWeek(startDate: newStart, templates: templates)
+    }
+
+    private func loadWeek(startDate: Date, templates: [StrengthTemplate]) {
+        if let loaded = WeekPlannerViewModel.loadPersistedWeek(for: startDate) {
+            self.weekPlan = loaded
+        } else {
+            let todayStart = calendar.startOfWeek(for: Date())
+            if calendar.isDate(startDate, inSameDayAs: todayStart) {
+                let sample = WeekPlannerViewModel.makeSampleWeek(calendar: calendar, templates: templates, start: startDate)
+                self.weekPlan = sample
+            } else {
+                self.weekPlan = WeekPlannerViewModel.makeEmptyWeek(calendar: calendar, start: startDate)
+            }
+            persistWeek(for: startDate)
+        }
+        self.currentStartOfWeek = startDate
     }
 
     func addStrengthSession(template: StrengthTemplate, on date: Date) {
@@ -170,13 +201,29 @@ final class WeekPlannerViewModel: ObservableObject {
 
     func addTemplateSession(template: StrengthTemplate, on date: Date) {
         guard let dayIndex = dayIndex(for: date) else { return }
+        
+        let runDetail: RunDetailData?
+        if template.category == .run {
+            runDetail = RunDetailData(
+                title: template.name,
+                notes: template.note ?? "",
+                distance: "",
+                duration: "",
+                averageHR: "",
+                category: template.runCategory
+            )
+        } else {
+            runDetail = nil
+        }
+        
         weekPlan.days[dayIndex].sessions.append(
             PlannedSession(
                 title: template.name,
                 kind: template.category == .run ? .run : .strength,
                 status: .planned,
                 note: "From template",
-                templateName: template.name
+                templateName: template.name,
+                runDetail: runDetail
             )
         )
         persistWeek()
@@ -205,6 +252,52 @@ final class WeekPlannerViewModel: ObservableObject {
                 note: planned ? "Planned ride" : "Logged ride"
             )
         )
+        persistWeek()
+    }
+
+    func saveWeeklyTemplate(name: String, note: String?, days: [DayTemplate]? = nil) {
+        let dayTemplates: [DayTemplate]
+        if let days {
+            dayTemplates = days
+        } else {
+            dayTemplates = weekPlan.days.map { day in
+                let weekday = calendar.component(.weekday, from: day.date)
+                return DayTemplate(weekday: weekday, sessions: day.sessions)
+            }
+        }
+        let template = WeeklyTemplate(name: name, note: note, days: dayTemplates)
+        weeklyTemplates.append(template)
+        print("✅ Saved weekly template: \(name), total templates: \(weeklyTemplates.count)")
+        persistWeeklyTemplates()
+    }
+
+    func hasWorkoutsInCurrentWeek() -> Bool {
+        return weekPlan.days.contains { !$0.sessions.isEmpty }
+    }
+    
+    func applyWeeklyTemplate(_ template: WeeklyTemplate, to start: Date, keepExisting: Bool = false) {
+        var days: [DayPlan] = []
+        for offset in 0..<7 {
+            guard let date = calendar.date(byAdding: .day, value: offset, to: start) else { continue }
+            let weekday = calendar.component(.weekday, from: date)
+            let templateSessions = template.days.first(where: { $0.weekday == weekday })?.sessions ?? []
+            
+            if keepExisting {
+                // Find existing day and keep its sessions, then append template sessions
+                if let existingDay = weekPlan.days.first(where: { calendar.isDate($0.date, inSameDayAs: date) }) {
+                    var combinedSessions = existingDay.sessions
+                    combinedSessions.append(contentsOf: templateSessions)
+                    days.append(DayPlan(date: date, sessions: combinedSessions))
+                } else {
+                    days.append(DayPlan(date: date, sessions: templateSessions))
+                }
+            } else {
+                // Override with template sessions only
+                days.append(DayPlan(date: date, sessions: templateSessions))
+            }
+        }
+        weekPlan = WeekPlan(startOfWeek: start, days: days)
+        currentStartOfWeek = start
         persistWeek()
     }
 
@@ -389,6 +482,36 @@ final class WeekPlannerViewModel: ObservableObject {
         }
     }
 
+    func persistWeeklyTemplates() {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted]
+        do {
+            let data = try encoder.encode(weeklyTemplates)
+            try data.write(to: Self.weeklyTemplatesURL, options: .atomic)
+            print("💾 Persisted \(weeklyTemplates.count) weekly templates to \(Self.weeklyTemplatesURL.path)")
+        } catch {
+            print("❌ Failed to persist weekly templates: \(error)")
+        }
+    }
+
+    private static func loadWeeklyTemplates() -> [WeeklyTemplate] {
+        let url = weeklyTemplatesURL
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            print("📂 No weekly templates file found at \(url.path)")
+            return []
+        }
+        do {
+            let data = try Data(contentsOf: url)
+            let decoder = JSONDecoder()
+            let templates = try decoder.decode([WeeklyTemplate].self, from: data)
+            print("📖 Loaded \(templates.count) weekly templates")
+            return templates
+        } catch {
+            print("❌ Failed to load weekly templates: \(error)")
+            return []
+        }
+    }
+
     private static func loadUnattachedRuns() -> [UnattachedRun] {
         let url = unattachedURL
         guard FileManager.default.fileExists(atPath: url.path) else { return [] }
@@ -494,8 +617,8 @@ final class WeekPlannerViewModel: ObservableObject {
         weekPlan.days.firstIndex { calendar.isDate($0.date, inSameDayAs: date) }
     }
 
-    static func makeSampleWeek(calendar: Calendar, templates: [StrengthTemplate]) -> WeekPlan {
-        let start = calendar.startOfWeek(for: Date())
+    static func makeSampleWeek(calendar: Calendar, templates: [StrengthTemplate], start: Date? = nil) -> WeekPlan {
+        let start = start ?? calendar.startOfWeek(for: Date())
         let days: [DayPlan] = (0..<7).compactMap { offset in
             guard let date = calendar.date(byAdding: .day, value: offset, to: start) else { return nil }
             var sessions: [PlannedSession] = []
@@ -536,20 +659,61 @@ final class WeekPlannerViewModel: ObservableObject {
         return WeekPlan(startOfWeek: start, days: days)
     }
 
-    private func persistWeek() {
+    static func makeEmptyWeek(calendar: Calendar, start: Date) -> WeekPlan {
+        let days: [DayPlan] = (0..<7).compactMap { offset in
+            guard let date = calendar.date(byAdding: .day, value: offset, to: start) else { return nil }
+            return DayPlan(date: date, sessions: [])
+        }
+        return WeekPlan(startOfWeek: start, days: days)
+    }
+
+    func exportCurrentWeek() -> URL? {
+        do {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let data = try encoder.encode(weekPlan)
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("weekplan-\(Self.isoDate(currentStartOfWeek)).json")
+            try data.write(to: url, options: .atomic)
+            return url
+        } catch {
+            print("Failed to export week: \(error)")
+            return nil
+        }
+    }
+
+    func importWeek(from url: URL) {
+        do {
+            let data = try Data(contentsOf: url)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let imported = try decoder.decode(WeekPlan.self, from: data)
+            self.weekPlan = imported
+            self.currentStartOfWeek = imported.startOfWeek
+            persistWeek(for: imported.startOfWeek)
+        } catch {
+            print("Failed to import week: \(error)")
+        }
+    }
+
+    private func persistWeek(for start: Date? = nil) {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted]
         do {
             let data = try encoder.encode(weekPlan)
-            try data.write(to: Self.storageURL, options: .atomic)
+            let url = Self.storageURL(for: start ?? currentStartOfWeek)
+            try data.write(to: url, options: .atomic)
         } catch {
             print("Failed to persist week: \(error)")
         }
     }
 
-    private static func loadPersistedWeek() -> WeekPlan? {
-        let url = storageURL
+    private func persistWeek() {
+        persistWeek(for: currentStartOfWeek)
+    }
+
+    private static func loadPersistedWeek(for start: Date) -> WeekPlan? {
+        let url = storageURL(for: start)
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         do {
             let data = try Data(contentsOf: url)
@@ -560,6 +724,17 @@ final class WeekPlannerViewModel: ObservableObject {
             print("Failed to load week: \(error)")
             return nil
         }
+    }
+
+    private static func storageURL(for start: Date) -> URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        return docs.appendingPathComponent("weekplan-\(isoDate(start)).json")
+    }
+
+    private static func isoDate(_ date: Date) -> String {
+        let fmt = ISO8601DateFormatter()
+        fmt.formatOptions = [.withFullDate]
+        return fmt.string(from: date)
     }
 }
 
