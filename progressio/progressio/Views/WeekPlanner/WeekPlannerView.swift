@@ -514,4 +514,3 @@ private func chip(text: String, color: Color) -> some View {
         .foregroundStyle(color)
         .clipShape(Capsule())
 }
-
