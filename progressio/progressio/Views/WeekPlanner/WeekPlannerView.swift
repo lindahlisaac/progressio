@@ -12,6 +12,9 @@ struct WeekPlannerView: View {
     @State private var showingWeeklyTemplatePicker = false
     @State private var showingApplyTemplateAlert = false
     @State private var selectedWeeklyTemplate: WeeklyTemplate?
+    @State private var showingSkipSheet = false
+    @State private var skipNote: String = ""
+    @State private var skipSessionID: UUID?
 
     var body: some View {
         List {
@@ -137,6 +140,36 @@ struct WeekPlannerView: View {
                 }
             }
         }
+        .sheet(isPresented: $showingSkipSheet) {
+            NavigationStack {
+                Form {
+                    Section("Skip note (optional)") {
+                        TextEditor(text: $skipNote)
+                            .frame(minHeight: 120)
+                    }
+                }
+                .navigationTitle("Skip session")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            showingSkipSheet = false
+                            skipSessionID = nil
+                            skipNote = ""
+                        }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Skip") {
+                            if let id = skipSessionID {
+                                viewModel.setSessionStatus(sessionID: id, status: .skipped, note: skipNote)
+                            }
+                            showingSkipSheet = false
+                            skipSessionID = nil
+                            skipNote = ""
+                        }
+                    }
+                }
+            }
+        }
         .alert("Apply Template to Current Week?", isPresented: $showingApplyTemplateAlert, presenting: selectedWeeklyTemplate) { template in
             if viewModel.hasWorkoutsInCurrentWeek() {
                 Button("Override existing") {
@@ -248,6 +281,11 @@ struct WeekPlannerView: View {
                             session: session,
                             onToggle: { viewModel.toggleStatus(sessionID: session.id) },
                             onDelete: { viewModel.removeSession(dayID: day.id, sessionID: session.id) },
+                            onSkip: {
+                                skipSessionID = session.id
+                                skipNote = session.note ?? ""
+                                showingSkipSheet = true
+                            },
                             showsDisclosure: true
                         )
                     }
@@ -257,15 +295,20 @@ struct WeekPlannerView: View {
 
             Menu("Add workout") {
                 Button {
-                    viewModel.addRun(on: day.date, title: "Planned Run", planned: true)
+                    viewModel.addRun(on: day.date, title: "Run", planned: true)
                 } label: {
-                    Label("Planned run", systemImage: SessionKind.run.systemImage)
+                    Label("Run", systemImage: SessionKind.run.systemImage)
                 }
-                    Button {
-                        viewModel.addCycle(on: day.date, title: "Planned Ride", planned: true)
-                    } label: {
-                        Label("Planned ride", systemImage: SessionKind.cycle.systemImage)
-                    }
+                Button {
+                    viewModel.addCycle(on: day.date, title: "Ride", planned: true)
+                } label: {
+                    Label("Ride", systemImage: SessionKind.cycle.systemImage)
+                }
+                Button {
+                    viewModel.addStrengthSession(on: day.date, title: "Strength")
+                } label: {
+                    Label("Strength", systemImage: SessionKind.strength.systemImage)
+                }
                 Button {
                     viewModel.addRun(on: day.date, title: "Detected run", planned: false)
                 } label: {
@@ -287,6 +330,9 @@ struct WeekPlannerView: View {
             StrengthLogView(
                 session: session,
                 template: templatesViewModel.templates.first(where: { $0.name == session.templateName }),
+                onNoteChange: { note in
+                    viewModel.setSessionNote(sessionID: session.id, note: note)
+                },
                 onCompleteStatus: {
                     viewModel.setSessionStatus(sessionID: session.id, status: .completed)
                 },
@@ -395,6 +441,7 @@ struct SessionRow: View {
     let session: PlannedSession
     let onToggle: () -> Void
     let onDelete: () -> Void
+    let onSkip: () -> Void
     var showsDisclosure: Bool = false
 
     private var leadingLabel: String {
@@ -404,6 +451,8 @@ struct SessionRow: View {
         case .planned:
             return "Mark Complete"
         case .completed:
+            return "Mark Planned"
+        case .skipped:
             return "Mark Planned"
         }
     }
@@ -456,7 +505,7 @@ struct SessionRow: View {
                             .foregroundStyle(.secondary)
                     }
                     if let note = session.note {
-                        Text(note)
+                        Text(truncated(note, limit: 60))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -483,13 +532,19 @@ struct SessionRow: View {
                 Label("Delete", systemImage: "trash")
             }
         }
-        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+        .swipeActions(edge: .leading, allowsFullSwipe: false) {
             Button {
                 onToggle()
             } label: {
                 Label(leadingLabel, systemImage: session.status == .completed ? "arrow.uturn.left" : "checkmark.circle")
             }
             .tint(session.status == .completed ? .blue : .green)
+            Button {
+                onSkip()
+            } label: {
+                Label("Skip", systemImage: "slash.circle")
+            }
+            .tint(.gray)
         }
     }
 }
@@ -513,4 +568,10 @@ private func chip(text: String, color: Color) -> some View {
         .background(color.opacity(0.12))
         .foregroundStyle(color)
         .clipShape(Capsule())
+}
+
+private func truncated(_ text: String, limit: Int) -> String {
+    if text.count <= limit { return text }
+    let idx = text.index(text.startIndex, offsetBy: limit)
+    return text[text.startIndex..<idx] + "…"
 }

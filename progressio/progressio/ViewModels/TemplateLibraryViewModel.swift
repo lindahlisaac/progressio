@@ -5,7 +5,7 @@ final class TemplateLibraryViewModel: ObservableObject {
     @Published var templates: [StrengthTemplate]
     private let store: TemplateStore
 
-    init(store: TemplateStore = FileTemplateStore(), templates: [StrengthTemplate]? = nil) {
+    init(store: TemplateStore = SyncingTemplateStore(), templates: [StrengthTemplate]? = nil) {
         self.store = store
         if let templates {
             self.templates = templates

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct StrengthLogView: View {
     let session: PlannedSession
+    var onNoteChange: ((String) -> Void)?
     @State private var exercises: [ExerciseLog]
     private let initialExercises: [ExerciseLog]
     @State private var showingAddExerciseSheet = false
@@ -9,6 +10,7 @@ struct StrengthLogView: View {
     @FocusState private var isInputFocused: Bool
     @State private var isLocked: Bool
     @State private var isCompleted: Bool
+    @State private var note: String
     private let storageURL: URL
     @Environment(\.scenePhase) private var scenePhase
     private let onCompleteStatus: (() -> Void)?
@@ -57,8 +59,9 @@ struct StrengthLogView: View {
         }
     }
 
-    init(session: PlannedSession, template: StrengthTemplate?, onCompleteStatus: (() -> Void)? = nil, onUnlockStatus: (() -> Void)? = nil) {
+    init(session: PlannedSession, template: StrengthTemplate?, onNoteChange: ((String) -> Void)? = nil, onCompleteStatus: (() -> Void)? = nil, onUnlockStatus: (() -> Void)? = nil) {
         self.session = session
+        self.onNoteChange = onNoteChange
         self.onCompleteStatus = onCompleteStatus
         self.onUnlockStatus = onUnlockStatus
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
@@ -89,16 +92,25 @@ struct StrengthLogView: View {
             let completed = session.status == .completed ? loaded.isCompleted : false
             _isCompleted = State(initialValue: completed)
             _isLocked = State(initialValue: completed)
+            _note = State(initialValue: session.note ?? "")
         } else {
             _exercises = State(initialValue: initialExercises)
             let completed = session.status == .completed
             _isCompleted = State(initialValue: completed)
             _isLocked = State(initialValue: completed)
+            _note = State(initialValue: session.note ?? "")
         }
     }
 
     var body: some View {
         List {
+            Section("Description") {
+                TextEditor(text: $note)
+                    .frame(minHeight: 100)
+                    .onChange(of: note) { newValue in
+                        onNoteChange?(newValue)
+                    }
+            }
             ForEach($exercises) { $exercise in
                 ExerciseSection(
                     exercise: $exercise,
@@ -137,6 +149,9 @@ struct StrengthLogView: View {
         }
         .onChange(of: exercises) { _ in
             persistState()
+        }
+        .onChange(of: note) { newValue in
+            onNoteChange?(newValue)
         }
         .onChange(of: scenePhase) { phase in
             if phase == .background || phase == .inactive {

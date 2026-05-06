@@ -21,9 +21,9 @@ final class WeekPlannerViewModel: ObservableObject {
 
     init(calendar: Calendar = .current,
          templates: [StrengthTemplate],
-         weekStore: WeekPlanStore = FileWeekPlanStore(),
-         unattachedStore: UnattachedRunStore = FileUnattachedRunStore(),
-         weeklyTemplateStore: WeeklyTemplateStore = FileWeeklyTemplateStore()) {
+         weekStore: WeekPlanStore = SyncingWeekPlanStore(),
+         unattachedStore: UnattachedRunStore = SyncingUnattachedRunStore(),
+         weeklyTemplateStore: WeeklyTemplateStore = SyncingWeeklyTemplateStore()) {
         self.calendar = calendar
         self.weekStore = weekStore
         self.unattachedStore = unattachedStore
@@ -77,6 +77,20 @@ final class WeekPlannerViewModel: ObservableObject {
                 status: .planned,
                 note: "From template",
                 templateName: template.name
+            )
+        )
+        persistWeek()
+    }
+
+    func addStrengthSession(on date: Date, title: String = "Strength", note: String? = nil) {
+        guard let dayIndex = dayIndex(for: date) else { return }
+        weekPlan.days[dayIndex].sessions.append(
+            PlannedSession(
+                title: title,
+                kind: .strength,
+                status: .planned,
+                note: note,
+                templateName: nil
             )
         )
         persistWeek()
@@ -195,6 +209,8 @@ final class WeekPlannerViewModel: ObservableObject {
                     weekPlan.days[dayIdx].sessions[sessionIndex].status = .completed
                 case .completed:
                     weekPlan.days[dayIdx].sessions[sessionIndex].status = .planned
+                case .skipped:
+                    weekPlan.days[dayIdx].sessions[sessionIndex].status = .planned
                 }
                 persistWeek()
                 break
@@ -208,10 +224,25 @@ final class WeekPlannerViewModel: ObservableObject {
         persistWeek()
     }
 
-    func setSessionStatus(sessionID: UUID, status: PlanStatus) {
+    func setSessionStatus(sessionID: UUID, status: PlanStatus, note: String? = nil) {
         for dayIdx in weekPlan.days.indices {
             if let sessionIndex = weekPlan.days[dayIdx].sessions.firstIndex(where: { $0.id == sessionID }) {
                 weekPlan.days[dayIdx].sessions[sessionIndex].status = status
+                if let note {
+                    let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
+                    weekPlan.days[dayIdx].sessions[sessionIndex].note = trimmed.isEmpty ? nil : trimmed
+                }
+                persistWeek()
+                break
+            }
+        }
+    }
+
+    func setSessionNote(sessionID: UUID, note: String?) {
+        for dayIdx in weekPlan.days.indices {
+            if let sessionIndex = weekPlan.days[dayIdx].sessions.firstIndex(where: { $0.id == sessionID }) {
+                let trimmed = note?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                weekPlan.days[dayIdx].sessions[sessionIndex].note = trimmed.isEmpty ? nil : trimmed
                 persistWeek()
                 break
             }
@@ -382,10 +413,19 @@ final class WeekPlannerViewModel: ObservableObject {
         return false
     }
 
-    private func detailSignature(_ detail: RunDetailData) -> String {
+    private func detailSignature(_ detail: RunDetailData, fallbackDate: Date?) -> String {
         if let uuid = detail.hkWorkoutUUID?.lowercased() {
             return "hk-\(uuid)"
         }
+
+        let dateComponent: String = {
+            if let eventDate = detail.eventDate {
+                return "\(Int(eventDate.timeIntervalSince1970))"
+            } else if let fallbackDate {
+                return "\(Int(fallbackDate.timeIntervalSince1970))"
+            }
+            return ""
+        }()
 
         let distanceValue = normalizedDistance(detail.distance)
         let durationValue = normalizedDurationSeconds(detail.duration)
@@ -393,6 +433,7 @@ final class WeekPlannerViewModel: ObservableObject {
         let category = detail.category?.rawValue.lowercased() ?? ""
 
         let components = [
+            dateComponent,
             title,
             distanceValue,
             durationValue,
@@ -403,7 +444,7 @@ final class WeekPlannerViewModel: ObservableObject {
     }
 
     private func runSignature(for run: UnattachedRun) -> String {
-        detailSignature(run.detail)
+        detailSignature(run.detail, fallbackDate: run.date)
     }
 
     private func existingRunSignatures() -> Set<String> {
@@ -414,10 +455,10 @@ final class WeekPlannerViewModel: ObservableObject {
         for day in weekPlan.days {
             for session in day.sessions where session.kind == .run {
                 if let detail = session.runDetail {
-                    sigs.insert(detailSignature(detail))
+                    sigs.insert(detailSignature(detail, fallbackDate: day.date))
                 }
                 if let detail = session.actualRun {
-                    sigs.insert(detailSignature(detail))
+                    sigs.insert(detailSignature(detail, fallbackDate: day.date))
                 }
             }
         }
@@ -607,6 +648,22 @@ final class WeekPlannerViewModel: ObservableObject {
 
     private func persistWeek() {
         persistWeek(for: currentStartOfWeek)
+    }
+
+    // MARK: - Sync helpers
+
+    @MainActor
+    func forceSync() async {
+        // Push local state
+        persistWeek()
+        persistUnattached()
+        persistWeeklyTemplates()
+        // Pull latest from stores
+        if let loaded = weekStore.loadWeek(start: currentStartOfWeek) {
+            weekPlan = loaded
+        }
+        unattachedRuns = unattachedStore.loadRuns()
+        weeklyTemplates = weeklyTemplateStore.loadTemplates()
     }
 }
 

@@ -4,6 +4,7 @@ struct RideDetailView: View {
     let session: PlannedSession
     var onSave: ((RunDetailData, PlanStatus, String?, String?, String?) -> Void)?
 
+    @State private var title: String
     @State private var plannedMiles: String
     @State private var actualMiles: String
     @State private var plannedElevation: String
@@ -23,6 +24,8 @@ struct RideDetailView: View {
         self.session = session
         self.onSave = onSave
         let detail = session.runDetail
+        let defaultTitle = "Ride"
+        _title = State(initialValue: (detail?.title ?? session.title).isEmpty ? defaultTitle : (detail?.title ?? session.title))
         _plannedMiles = State(initialValue: detail?.distance ?? "")
         _actualMiles = State(initialValue: session.actualRun?.distance ?? "")
         _plannedElevation = State(initialValue: detail?.elevationGain ?? "")
@@ -43,7 +46,20 @@ struct RideDetailView: View {
 
     var body: some View {
         Form {
+            if session.status == .skipped, let note = session.note, !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Section("Skip note") {
+                    Text(note)
+                        .foregroundStyle(.secondary)
+                }
+            }
             Section("Planned") {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Session title")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("Ride", text: $title)
+                        .focused($focusedField, equals: .title)
+                }
                 Picker("Effort unit", selection: $effortUnit) {
                     ForEach(EffortUnit.allCases) { unit in
                         Text(unit.label).tag(unit)
@@ -167,6 +183,7 @@ struct RideDetailView: View {
     }
 
     private enum Field {
+        case title
         case plannedMiles
         case actualMiles
         case plannedElevation
@@ -176,9 +193,12 @@ struct RideDetailView: View {
     private func save(statusOverride: PlanStatus?, dismissAfter: Bool) {
         let base = session.runDetail
         let detail: RunDetailData
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let effectiveTitle = trimmedTitle.isEmpty ? "Ride" : trimmedTitle
+
         if effortUnit == .miles {
             detail = RunDetailData(
-                title: base?.title ?? session.title,
+                title: effectiveTitle,
                 notes: base?.notes ?? "",
                 distance: plannedMiles,
                 duration: "",
@@ -190,7 +210,7 @@ struct RideDetailView: View {
         } else {
             let plannedDurationString = RideDetailView.durationString(h: plannedHours, m: plannedMinutes, s: plannedSeconds)
             detail = RunDetailData(
-                title: base?.title ?? session.title,
+                title: effectiveTitle,
                 notes: base?.notes ?? "",
                 distance: "",
                 duration: plannedDurationString,

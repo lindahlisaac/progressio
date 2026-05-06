@@ -20,12 +20,14 @@ enum PlanStatus: String, CaseIterable, Codable {
     case planned = "Planned"
     case completed = "Completed"
     case unplanned = "Unplanned"
+    case skipped = "Skipped"
 
     var tint: Color {
         switch self {
         case .planned: return .blue.opacity(0.8)
         case .completed: return .green.opacity(0.85)
         case .unplanned: return .orange.opacity(0.85)
+        case .skipped: return .gray.opacity(0.8)
         }
     }
 }
@@ -64,6 +66,7 @@ struct RunDetailData: Codable, Equatable {
     var category: RunCategory?
     var hkWorkoutUUID: String?
     var elevationGain: String?
+    var eventDate: Date?
     var updatedAt: Date?
     var etag: String?
 }

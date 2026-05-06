@@ -9,6 +9,8 @@ struct SettingsView: View {
     @State private var exportURL: URL?
     @State private var showingWeekImporter = false
     @State private var weekImportMessage: String?
+    @State private var syncMessage: String?
+    @State private var isSyncing = false
 
     var body: some View {
         List {
@@ -75,6 +77,27 @@ struct SettingsView: View {
                 .disabled(weekViewModel.unattachedRuns.isEmpty)
                 if !weekViewModel.unattachedRuns.isEmpty {
                     Text("Unattached runs: \(weekViewModel.unattachedRuns.count)")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                Button {
+                    Task {
+                        isSyncing = true
+                        syncMessage = nil
+                        await weekViewModel.forceSync()
+                        isSyncing = false
+                        syncMessage = "Synced via CloudKit"
+                    }
+                } label: {
+                    Label("Sync now", systemImage: "arrow.clockwise")
+                }
+                if isSyncing {
+                    HStack {
+                        ProgressView()
+                        Text("Syncing…")
+                    }
+                } else if let syncMessage {
+                    Text(syncMessage)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }

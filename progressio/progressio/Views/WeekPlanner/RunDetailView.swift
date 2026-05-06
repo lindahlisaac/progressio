@@ -4,6 +4,7 @@ struct RunDetailView: View {
     let session: PlannedSession
     var onSave: ((RunDetailData, PlanStatus, String?, String?, String?) -> Void)?
 
+    @State private var title: String
     @State private var distance: String
     @State private var actualDistance: String
     @State private var plannedElevation: String
@@ -24,6 +25,8 @@ struct RunDetailView: View {
         self.session = session
         self.onSave = onSave
         let detail = session.runDetail
+        let defaultTitle = session.kind == .cycle ? "Ride" : "Run"
+        _title = State(initialValue: (detail?.title ?? session.title).isEmpty ? defaultTitle : (detail?.title ?? session.title))
         _distance = State(initialValue: detail?.distance ?? "")
         _actualDistance = State(initialValue: session.actualRun?.distance ?? "")
         _plannedElevation = State(initialValue: detail?.elevationGain ?? "")
@@ -45,7 +48,20 @@ struct RunDetailView: View {
 
     var body: some View {
         Form {
+            if session.status == .skipped, let note = session.note, !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Section("Skip note") {
+                    Text(note)
+                        .foregroundStyle(.secondary)
+                }
+            }
             Section("Planned") {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Session title")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField(session.kind == .cycle ? "Ride" : "Run", text: $title)
+                        .focused($focusedField, equals: .title)
+                }
                 Picker("Effort unit", selection: $effortUnit) {
                     ForEach(EffortUnit.allCases) { unit in
                         Text(unit.label).tag(unit)
@@ -177,6 +193,7 @@ struct RunDetailView: View {
     }
 
     private enum Field {
+        case title
         case plannedMiles
         case actualMiles
         case plannedElevation
@@ -186,9 +203,12 @@ struct RunDetailView: View {
     private func save(statusOverride: PlanStatus?, dismissAfter: Bool) {
         let base = session.runDetail
         let detail: RunDetailData
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let effectiveTitle = trimmedTitle.isEmpty ? (session.kind == .cycle ? "Ride" : "Run") : trimmedTitle
+
         if effortUnit == .miles {
             detail = RunDetailData(
-                title: base?.title ?? session.title,
+                title: effectiveTitle,
                 notes: base?.notes ?? "",
                 distance: distance,
                 duration: "",
@@ -200,7 +220,7 @@ struct RunDetailView: View {
         } else {
             let plannedDurationString = RunDetailView.durationString(h: plannedHours, m: plannedMinutes, s: plannedSeconds)
             detail = RunDetailData(
-                title: base?.title ?? session.title,
+                title: effectiveTitle,
                 notes: base?.notes ?? "",
                 distance: "",
                 duration: plannedDurationString,
