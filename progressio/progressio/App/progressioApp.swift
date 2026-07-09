@@ -9,6 +9,10 @@ import SwiftUI
 
 @main
 struct progressioApp: App {
+    init() {
+        MigrationRunner.shared.runIfNeeded()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
