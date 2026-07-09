@@ -50,9 +50,7 @@ struct FileTemplateStore: TemplateStore {
     func loadTemplates() -> [StrengthTemplate]? {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         do {
-            let data = try Data(contentsOf: url)
-            let decoder = JSONDecoder()
-            return try decoder.decode([StrengthTemplate].self, from: data)
+            return try TemplatePersistence.loadTemplates(from: url)
         } catch {
             print("Failed to load templates: \(error)")
             return nil
@@ -60,11 +58,8 @@ struct FileTemplateStore: TemplateStore {
     }
 
     func save(_ templates: [StrengthTemplate]) {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted]
         do {
-            let data = try encoder.encode(templates)
-            try data.write(to: url, options: .atomic)
+            try TemplatePersistence.saveTemplates(templates, to: url)
         } catch {
             print("Failed to persist templates: \(error)")
         }
@@ -145,10 +140,7 @@ struct FileWeeklyTemplateStore: WeeklyTemplateStore {
     func loadTemplates() -> [WeeklyTemplate] {
         guard FileManager.default.fileExists(atPath: url.path) else { return [] }
         do {
-            let data = try Data(contentsOf: url)
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            return try decoder.decode([WeeklyTemplate].self, from: data)
+            return try TemplatePersistence.loadWeeklyTemplates(from: url)
         } catch {
             print("Failed to load weekly templates: \(error)")
             return []
@@ -156,12 +148,8 @@ struct FileWeeklyTemplateStore: WeeklyTemplateStore {
     }
 
     func save(_ templates: [WeeklyTemplate]) {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted]
-        encoder.dateEncodingStrategy = .iso8601
         do {
-            let data = try encoder.encode(templates)
-            try data.write(to: url, options: .atomic)
+            try TemplatePersistence.saveWeeklyTemplates(templates, to: url)
             print("💾 Persisted \(templates.count) weekly templates to \(url.path)")
         } catch {
             print("❌ Failed to persist weekly templates: \(error)")

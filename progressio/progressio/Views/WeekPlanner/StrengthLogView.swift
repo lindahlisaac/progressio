@@ -64,8 +64,7 @@ struct StrengthLogView: View {
         self.onNoteChange = onNoteChange
         self.onCompleteStatus = onCompleteStatus
         self.onUnlockStatus = onUnlockStatus
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        self.storageURL = docs.appendingPathComponent("strengthlog-\(session.id.uuidString).json")
+        self.storageURL = StrengthLogPersistence.strengthLogURL(for: session.id)
 
         if let template {
             let seeded: [ExerciseLog] = template.exercises.map { exercise -> ExerciseLog in
@@ -87,7 +86,7 @@ struct StrengthLogView: View {
             self.initialExercises = []
         }
 
-        if let loaded = StrengthLogView.loadState(from: storageURL) {
+        if let loaded = StrengthLogPersistence.load(from: storageURL) {
             _exercises = State(initialValue: loaded.exercises)
             let completed = session.status == .completed ? loaded.isCompleted : false
             _isCompleted = State(initialValue: completed)
@@ -272,10 +271,8 @@ struct StrengthLogView: View {
 
     private func persistState() {
         let state = StrengthLogState(sessionID: session.id, exercises: exercises, isCompleted: isCompleted)
-        let encoder = JSONEncoder()
         do {
-            let data = try encoder.encode(state)
-            try data.write(to: storageURL, options: .atomic)
+            try StrengthLogPersistence.save(state, to: storageURL)
             print("Saved strength log to \(storageURL.lastPathComponent)")
         } catch {
             print("Failed to persist strength log at \(storageURL): \(error)")
@@ -283,25 +280,11 @@ struct StrengthLogView: View {
     }
 
     private func reloadStateIfAvailable() {
-        if let latest = StrengthLogView.loadState(from: storageURL) {
+        if let latest = StrengthLogPersistence.load(from: storageURL) {
             exercises = latest.exercises
             let completed = session.status == .completed ? latest.isCompleted : false
             isCompleted = completed
             isLocked = completed
-        }
-    }
-
-    private static func loadState(from url: URL) -> StrengthLogState? {
-        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-        do {
-            let data = try Data(contentsOf: url)
-            let decoder = JSONDecoder()
-            let decoded = try decoder.decode(StrengthLogState.self, from: data)
-            print("Loaded strength log from \(url.lastPathComponent)")
-            return decoded
-        } catch {
-            print("Failed to load strength log at \(url): \(error)")
-            return nil
         }
     }
 }

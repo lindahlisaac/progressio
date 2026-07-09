@@ -21,6 +21,7 @@ final class MigrationRunner {
   private static let defaultSteps: [MigrationStep] = [
     MigrationBaselineStep(),
     MigrateWeekPlansAndWorkoutsStep(),
+    MigrateTemplatesAndStrengthLogsStep(),
   ]
 
   /// Runs pending migrations on app launch. Safe to call multiple times.

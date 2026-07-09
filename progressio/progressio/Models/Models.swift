@@ -103,14 +103,32 @@ struct StrengthLogState: Codable {
     var sessionID: UUID
     var exercises: [ExerciseLog]
     var isCompleted: Bool
+    var schemaVersion: Int
+    var createdAt: Date?
     var updatedAt: Date?
+    var isDeleted: Bool
+    var deletedAt: Date?
     var etag: String?
 
-    init(sessionID: UUID, exercises: [ExerciseLog], isCompleted: Bool = false, updatedAt: Date? = Date(), etag: String? = nil) {
+    init(
+        sessionID: UUID,
+        exercises: [ExerciseLog],
+        isCompleted: Bool = false,
+        schemaVersion: Int = WorkoutSchema.currentVersion,
+        createdAt: Date? = Date(),
+        updatedAt: Date? = Date(),
+        isDeleted: Bool = false,
+        deletedAt: Date? = nil,
+        etag: String? = nil
+    ) {
         self.sessionID = sessionID
         self.exercises = exercises
         self.isCompleted = isCompleted
+        self.schemaVersion = schemaVersion
+        self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.isDeleted = isDeleted
+        self.deletedAt = deletedAt
         self.etag = etag
     }
 
@@ -119,7 +137,11 @@ struct StrengthLogState: Codable {
         sessionID = try container.decode(UUID.self, forKey: .sessionID)
         exercises = try container.decode([ExerciseLog].self, forKey: .exercises)
         isCompleted = try container.decodeIfPresent(Bool.self, forKey: .isCompleted) ?? false
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? WorkoutSchema.currentVersion
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? updatedAt
+        isDeleted = try container.decodeIfPresent(Bool.self, forKey: .isDeleted) ?? false
+        deletedAt = try container.decodeIfPresent(Date.self, forKey: .deletedAt)
         etag = try container.decodeIfPresent(String.self, forKey: .etag)
     }
 }
@@ -179,16 +201,49 @@ struct WeeklyTemplate: Identifiable, Codable {
     var name: String
     var note: String?
     var days: [DayTemplate]
+    var schemaVersion: Int
+    var createdAt: Date?
     var updatedAt: Date?
+    var isDeleted: Bool
+    var deletedAt: Date?
     var etag: String?
 
-    init(id: UUID = UUID(), name: String, note: String? = nil, days: [DayTemplate], updatedAt: Date? = Date(), etag: String? = nil) {
+    init(
+        id: UUID = UUID(),
+        name: String,
+        note: String? = nil,
+        days: [DayTemplate],
+        schemaVersion: Int = WorkoutSchema.currentVersion,
+        createdAt: Date? = Date(),
+        updatedAt: Date? = Date(),
+        isDeleted: Bool = false,
+        deletedAt: Date? = nil,
+        etag: String? = nil
+    ) {
         self.id = id
         self.name = name
         self.note = note
         self.days = days
+        self.schemaVersion = schemaVersion
+        self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.isDeleted = isDeleted
+        self.deletedAt = deletedAt
         self.etag = etag
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        note = try container.decodeIfPresent(String.self, forKey: .note)
+        days = try container.decode([DayTemplate].self, forKey: .days)
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? WorkoutSchema.currentVersion
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? updatedAt
+        isDeleted = try container.decodeIfPresent(Bool.self, forKey: .isDeleted) ?? false
+        deletedAt = try container.decodeIfPresent(Date.self, forKey: .deletedAt)
+        etag = try container.decodeIfPresent(String.self, forKey: .etag)
     }
 }
 
@@ -196,11 +251,42 @@ struct DayTemplate: Identifiable, Codable {
     let id: UUID
     var weekday: Int // 1 = Sunday ... 7 = Saturday
     var sessions: [PlannedSession]
+    var schemaVersion: Int
+    var createdAt: Date?
+    var updatedAt: Date?
+    var isDeleted: Bool
+    var deletedAt: Date?
 
-    init(id: UUID = UUID(), weekday: Int, sessions: [PlannedSession] = []) {
+    init(
+        id: UUID = UUID(),
+        weekday: Int,
+        sessions: [PlannedSession] = [],
+        schemaVersion: Int = WorkoutSchema.currentVersion,
+        createdAt: Date? = Date(),
+        updatedAt: Date? = Date(),
+        isDeleted: Bool = false,
+        deletedAt: Date? = nil
+    ) {
         self.id = id
         self.weekday = weekday
         self.sessions = sessions
+        self.schemaVersion = schemaVersion
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.isDeleted = isDeleted
+        self.deletedAt = deletedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        weekday = try container.decode(Int.self, forKey: .weekday)
+        sessions = try container.decode([PlannedSession].self, forKey: .sessions)
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? WorkoutSchema.currentVersion
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? updatedAt
+        isDeleted = try container.decodeIfPresent(Bool.self, forKey: .isDeleted) ?? false
+        deletedAt = try container.decodeIfPresent(Date.self, forKey: .deletedAt)
     }
 }
 
@@ -211,18 +297,55 @@ struct StrengthTemplate: Identifiable, Codable {
     var exercises: [StrengthExercise]
     var note: String?
     var runCategory: RunCategory?
+    var schemaVersion: Int
+    var createdAt: Date?
     var updatedAt: Date?
+    var isDeleted: Bool
+    var deletedAt: Date?
     var etag: String?
 
-    init(id: UUID = UUID(), name: String, category: TemplateCategory, exercises: [StrengthExercise], note: String? = nil, runCategory: RunCategory? = nil, updatedAt: Date? = Date(), etag: String? = nil) {
+    init(
+        id: UUID = UUID(),
+        name: String,
+        category: TemplateCategory,
+        exercises: [StrengthExercise],
+        note: String? = nil,
+        runCategory: RunCategory? = nil,
+        schemaVersion: Int = WorkoutSchema.currentVersion,
+        createdAt: Date? = Date(),
+        updatedAt: Date? = Date(),
+        isDeleted: Bool = false,
+        deletedAt: Date? = nil,
+        etag: String? = nil
+    ) {
         self.id = id
         self.name = name
         self.category = category
         self.exercises = exercises
         self.note = note
         self.runCategory = runCategory
+        self.schemaVersion = schemaVersion
+        self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.isDeleted = isDeleted
+        self.deletedAt = deletedAt
         self.etag = etag
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        category = try container.decode(TemplateCategory.self, forKey: .category)
+        exercises = try container.decode([StrengthExercise].self, forKey: .exercises)
+        note = try container.decodeIfPresent(String.self, forKey: .note)
+        runCategory = try container.decodeIfPresent(RunCategory.self, forKey: .runCategory)
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? WorkoutSchema.currentVersion
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? updatedAt
+        isDeleted = try container.decodeIfPresent(Bool.self, forKey: .isDeleted) ?? false
+        deletedAt = try container.decodeIfPresent(Date.self, forKey: .deletedAt)
+        etag = try container.decodeIfPresent(String.self, forKey: .etag)
     }
 }
 

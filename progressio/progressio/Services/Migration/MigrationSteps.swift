@@ -35,7 +35,7 @@ struct MigrateWeekPlansAndWorkoutsStep: MigrationStep {
   }
 }
 
-// MARK: - Task 005 stub (inactive until added to `MigrationRunner.defaultSteps`)
+// MARK: - Task 005
 
 struct MigrateTemplatesAndStrengthLogsStep: MigrationStep {
   let name = "Migrate templates and strength logs"
@@ -43,7 +43,6 @@ struct MigrateTemplatesAndStrengthLogsStep: MigrationStep {
 
   func migrate(from currentVersion: Int) throws {
     guard currentVersion < resultingVersion else { return }
-    // Task 005 will migrate templates.json, weeklyTemplates.json, strengthlog-*.json.
-    print("⏭️ \(name): no-op stub (Task 005).")
+    try TemplateAndStrengthLogMigration.migrateAll()
   }
 }

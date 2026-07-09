@@ -54,10 +54,10 @@ The original roadmap assumed a greenfield data model refactor. The audit found:
 |---|------|--------|
 | 000 | `000-AgentOperatingRules.md` | Reference |
 | 001 | `001-AuditExistingApp.md` | **Complete** |
-| 002 | `002-WorkoutTypesAndMetadata.md` | Pending |
-| 003 | `003-MigrationInfrastructure.md` | Pending |
-| 004 | `004-MigrateWeekPlansAndWorkouts.md` | Pending |
-| 005 | `005-MigrateTemplatesAndStrengthLogs.md` | Pending |
+| 002 | `002-WorkoutTypesAndMetadata.md` | **Complete** |
+| 003 | `003-MigrationInfrastructure.md` | **Complete** |
+| 004 | `004-MigrateWeekPlansAndWorkouts.md` | **Complete** |
+| 005 | `005-MigrateTemplatesAndStrengthLogs.md` | **Complete** |
 | 006 | `006-SyncMetadataAndSoftDeletes.md` | Pending |
 | 007 | `007-WireViewModelsToWorkoutModel.md` | Pending |
 | 008 | `008-TemplateSnapshotOnApply.md` | Pending |

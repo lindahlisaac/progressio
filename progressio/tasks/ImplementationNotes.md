@@ -277,6 +277,44 @@ Aligned with `tasks/README.md` ordering:
 
 ---
 
+## Task Completion Notes
+
+### Task 002 — Workout Types and Metadata
+
+- Added target types under `Models/`: `Workout`, `WorkoutEnums`, `WorkoutValues`, `WorkoutSchema`, `LegacySessionMapper`.
+- Legacy `PlannedSession` / stores / UI unchanged until Task 007.
+- `LegacySessionMapperTests` in `progressioTests/`.
+
+### Task 003 — Migration Infrastructure
+
+- `Services/Migration/`: `MigrationRunner`, `MigrationStep`, `AppDataMigration`, `LegacyDataDecoder`, `MigrationBackup`.
+- Runs on launch via `progressioApp.init()`; persists `Documents/progressio/dataVersion.json`.
+- `latestVersion` advances only as migration steps ship (avoid no-op stubs bumping version).
+
+### Task 004 — Migrate Week Plans and Workouts
+
+- On-disk week format: `MigratedWeekPlan` / `MigratedDayPlan` with `[Workout]` and `formatVersion`.
+- `WeekPlanMigration`, `WeekPlanMapper`, `WeekPlanPersistence` — backup, migrate, dual-read.
+- `FileWeekPlanStore` / `CloudWeekPlanStore` dual-read legacy or migrated JSON; save writes migrated format.
+- `SyncingWeekPlanStore` merge comment documents LWW + dual-read policy.
+- App data version **v2** after week-plan migration.
+
+### Task 005 — Migrate Templates and Strength Logs
+
+- **Model metadata** added to `StrengthTemplate`, `WeeklyTemplate`, `DayTemplate`, `StrengthLogState`:
+  `schemaVersion`, `createdAt`, `updatedAt`, `isDeleted`, `deletedAt` (templates); custom `init(from:)` defaults for legacy JSON.
+- **Migration helpers**: `MetadataStamping`, `TemplatePersistence`, `StrengthLogPersistence`, `TemplateAndStrengthLogMigration`.
+- **On launch (v3 step)**: backs up and stamps `templates.json`, `weeklyTemplates.json`, `strengthlog-*.json`; optionally embeds strength log snapshots into matching `Workout.completedValues` in migrated week plans (by session UUID).
+- **Stores / UI**: `FileTemplateStore` / `FileWeeklyTemplateStore` use `TemplatePersistence`; `StrengthLogView` uses `StrengthLogPersistence`.
+- **Still legacy**: weekly template days embed `[PlannedSession]` (snapshot fix is Task 010); strength logs remain local files (CloudKit sync is Task 021); soft-delete behavior in stores is Task 006.
+
+### Next up — Task 006
+
+- Wire soft deletes and full sync metadata through `SyncingStores` / CloudKit for all entity types.
+- Template models already carry metadata fields from Task 005.
+
+---
+
 ## Files Likely Modified in Next Tasks
 
 ### Task 002 (Workout Types and Metadata)
@@ -353,4 +391,4 @@ progressio/progressio/
 
 ---
 
-*Last updated: Task 001 audit; refactor sequence aligned to tasks/README.md (pre-002).*
+*Last updated: Task 005 complete.*
