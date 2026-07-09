@@ -345,9 +345,18 @@ Aligned with `tasks/README.md` ordering:
 - **`TemplateLibraryViewModel`** — manages strength and endurance templates separately; `RunCategory.longRun` added with full `RunType` bridge.
 - **UI** — Templates library, planner template picker, and weekly template picker use `EnduranceTemplate` for endurance; strength templates unchanged.
 
-### Next up — Task 010
+### Task 010 — Weekly Template Snapshot on Apply
 
-- Weekly template snapshot-on-apply.
+- **`WeeklyTemplateWorkoutEntry`** — planned-only snapshot (activity, run type, planned values, optional linked template ID); apply always creates a new workout UUID.
+- **`DayTemplate.workoutEntries`** — replaces embedded `sessions: [PlannedSession]`; decoder migrates legacy `sessions` on read; encoder writes `workoutEntries` only.
+- **`applyWeeklyTemplate`** — merge appends new IDs; overwrite soft-deletes existing active workouts then applies copies; sets `linkedWeeklyTemplateId`.
+- **`saveWeeklyTemplate`** — stores snapshots from active workouts, not live references.
+- **Migration v5** — rewrites `weeklyTemplates.json` from legacy sessions to workout entry snapshots.
+- **UI** — weekly template create/edit/detail and planner list use `workoutEntries`; planner day list filters via `DayPlan.activeWorkouts`.
+
+### Next up — Task 011
+
+- Planner activity types and add flow.
 
 ---
 
@@ -427,4 +436,4 @@ progressio/progressio/
 
 ---
 
-*Last updated: Task 009 complete.*
+*Last updated: Task 010 complete.*

@@ -62,7 +62,7 @@ The original roadmap assumed a greenfield data model refactor. The audit found:
 | 007 | `007-WireViewModelsToWorkoutModel.md` | Complete |
 | 008 | `008-TemplateSnapshotOnApply.md` | **Complete** |
 | 009 | `009-EnduranceTemplateModelSplit.md` | **Complete** |
-| 010 | `010-WeeklyTemplateSnapshotOnApply.md` | Pending |
+| 010 | `010-WeeklyTemplateSnapshotOnApply.md` | **Complete** |
 | 011 | `011-PlannerActivityTypesAndAddFlow.md` | Pending |
 | 012 | `012-PlannerStatusIndicators.md` | Pending |
 | 013 | `013-WeeklyTotals.md` | Pending |

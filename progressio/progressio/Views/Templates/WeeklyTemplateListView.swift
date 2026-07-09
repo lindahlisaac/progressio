@@ -26,7 +26,7 @@ struct WeeklyTemplateListView: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
-                            Text("\(template.days.flatMap { $0.sessions }.count) workouts")
+                            Text("\(template.days.flatMap { $0.workoutEntries }.count) workouts")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }

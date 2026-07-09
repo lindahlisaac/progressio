@@ -12,6 +12,9 @@ struct WeekPlannerView: View {
     @State private var showingWeeklyTemplatePicker = false
     @State private var showingApplyTemplateAlert = false
     @State private var selectedWeeklyTemplate: WeeklyTemplate?
+    @State private var showingSaveWeekAsTemplate = false
+    @State private var saveTemplateName: String = ""
+    @State private var saveTemplateNote: String = ""
     @State private var showingSkipSheet = false
     @State private var skipNote: String = ""
     @State private var skipSessionID: UUID?
@@ -32,13 +35,27 @@ struct WeekPlannerView: View {
                 }
             }
             ToolbarItemGroup(placement: .navigationBarTrailing) {
-                Button {
-                    showingWeeklyTemplatePicker = true
+                Menu {
+                    Button {
+                        showingWeeklyTemplatePicker = true
+                    } label: {
+                        Label("Apply Weekly Template", systemImage: "rectangle.stack.badge.plus")
+                    }
+                    .disabled(viewModel.activeWeeklyTemplates.isEmpty)
+
+                    Button {
+                        saveTemplateName = ""
+                        saveTemplateNote = ""
+                        showingSaveWeekAsTemplate = true
+                    } label: {
+                        Label("Save Week as Template", systemImage: "square.and.arrow.down")
+                    }
+                    .disabled(!viewModel.hasWorkoutsInCurrentWeek())
                 } label: {
-                    Image(systemName: "calendar.badge.plus")
+                    Image(systemName: "rectangle.stack")
                 }
-                .disabled(viewModel.activeWeeklyTemplates.isEmpty)
-                
+                .accessibilityLabel("Weekly templates")
+
                 Button {
                     viewModel.goToNextWeek(templates: templatesViewModel.activeTemplates)
                 } label: {
@@ -157,7 +174,7 @@ struct WeekPlannerView: View {
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
-                                Text("\(template.days.flatMap { $0.sessions }.count) workouts")
+                                Text("\(template.days.flatMap { $0.workoutEntries }.count) workouts")
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
                             }
@@ -170,6 +187,43 @@ struct WeekPlannerView: View {
                         Button("Cancel") {
                             showingWeeklyTemplatePicker = false
                         }
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showingSaveWeekAsTemplate) {
+            NavigationStack {
+                Form {
+                    Section("Template Info") {
+                        TextField("Name", text: $saveTemplateName)
+                        TextField("Note (optional)", text: $saveTemplateNote, axis: .vertical)
+                            .lineLimit(3, reservesSpace: true)
+                    }
+                    Section {
+                        Text("Saves a snapshot of the currently viewed week. Later edits to the week will not change this template.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .navigationTitle("Save Week as Template")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            showingSaveWeekAsTemplate = false
+                        }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") {
+                            let name = saveTemplateName.trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard !name.isEmpty else { return }
+                            let note = saveTemplateNote.trimmingCharacters(in: .whitespacesAndNewlines)
+                            viewModel.saveWeeklyTemplate(
+                                name: name,
+                                note: note.isEmpty ? nil : note
+                            )
+                            showingSaveWeekAsTemplate = false
+                        }
+                        .disabled(saveTemplateName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
             }
@@ -302,11 +356,11 @@ struct WeekPlannerView: View {
     @ViewBuilder
     private func daySection(for day: DayPlan) -> some View {
         Section(header: Text(dayHeader(for: day.date))) {
-            if day.workouts.isEmpty {
+            if day.activeWorkouts.isEmpty {
                 Text("No sessions planned")
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(day.workouts) { workout in
+                ForEach(day.activeWorkouts) { workout in
                     NavigationLink {
                         workoutDestination(workout)
                     } label: {
@@ -421,7 +475,7 @@ struct WeekPlannerView: View {
     }
 
     private var plannedRunMiles: Double {
-        let workouts = viewModel.weekPlan.days.flatMap { $0.workouts }
+        let workouts = viewModel.weekPlan.days.flatMap { $0.activeWorkouts }
         let runs = workouts.filter { $0.activityType.sessionKind == .run }
         return runs.reduce(0.0) { partial, workout in
             partial + miles(from: workout.plannedDistance)
@@ -429,7 +483,7 @@ struct WeekPlannerView: View {
     }
 
     private var completedRunMiles: Double {
-        let workouts = viewModel.weekPlan.days.flatMap { $0.workouts }
+        let workouts = viewModel.weekPlan.days.flatMap { $0.activeWorkouts }
         let runs = workouts.filter { $0.activityType.sessionKind == .run && ($0.status == .completed || $0.status == .partiallyCompleted) }
         return runs.reduce(0.0) { partial, workout in
             let distance = workout.actualDistance.isEmpty ? workout.plannedDistance : workout.actualDistance
@@ -438,7 +492,7 @@ struct WeekPlannerView: View {
     }
 
     private var plannedRideMiles: Double {
-        let workouts = viewModel.weekPlan.days.flatMap { $0.workouts }
+        let workouts = viewModel.weekPlan.days.flatMap { $0.activeWorkouts }
         let rides = workouts.filter { $0.activityType == .bike }
         return rides.reduce(0.0) { partial, workout in
             partial + miles(from: workout.plannedDistance)
@@ -446,7 +500,7 @@ struct WeekPlannerView: View {
     }
 
     private var completedRideMiles: Double {
-        let workouts = viewModel.weekPlan.days.flatMap { $0.workouts }
+        let workouts = viewModel.weekPlan.days.flatMap { $0.activeWorkouts }
         let rides = workouts.filter { $0.activityType == .bike && ($0.status == .completed || $0.status == .partiallyCompleted) }
         return rides.reduce(0.0) { partial, workout in
             let distance = workout.actualDistance.isEmpty ? workout.plannedDistance : workout.actualDistance
@@ -455,12 +509,12 @@ struct WeekPlannerView: View {
     }
 
     private var plannedStrengthCount: Int {
-        viewModel.weekPlan.days.flatMap { $0.workouts }.filter { $0.activityType == .strength }.count
+        viewModel.weekPlan.days.flatMap { $0.activeWorkouts }.filter { $0.activityType == .strength }.count
     }
 
     private var completedStrengthCount: Int {
         var count = 0
-        for workout in viewModel.weekPlan.days.flatMap({ $0.workouts }) {
+        for workout in viewModel.weekPlan.days.flatMap({ $0.activeWorkouts }) {
             if workout.activityType == .strength,
                workout.status == .completed || workout.status == .partiallyCompleted {
                 count += 1

@@ -58,3 +58,15 @@ struct MigrateEnduranceTemplatesStep: MigrationStep {
     try EnduranceTemplateMigration.migrateAll()
   }
 }
+
+// MARK: - Task 010
+
+struct MigrateWeeklyTemplateSnapshotsStep: MigrationStep {
+  let name = "Migrate weekly template snapshots"
+  let resultingVersion = AppDataMigration.weeklyTemplateSnapshotsMigratedVersion
+
+  func migrate(from currentVersion: Int) throws {
+    guard currentVersion < resultingVersion else { return }
+    try WeeklyTemplateSnapshotMigration.migrateAll()
+  }
+}

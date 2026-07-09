@@ -17,8 +17,11 @@ enum AppDataMigration {
   /// Run templates split into EnduranceTemplate (Task 009).
   static let enduranceTemplatesMigratedVersion = 4
 
+  /// Weekly templates use workout entry snapshots (Task 010).
+  static let weeklyTemplateSnapshotsMigratedVersion = 5
+
   /// Highest migration step that runs in the current app release.
-  static let latestVersion = enduranceTemplatesMigratedVersion
+  static let latestVersion = weeklyTemplateSnapshotsMigratedVersion
 
   static let versionFileName = "dataVersion.json"
 }

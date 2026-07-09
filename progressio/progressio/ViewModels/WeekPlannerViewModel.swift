@@ -141,11 +141,12 @@ final class WeekPlannerViewModel: ObservableObject {
         } else {
             dayTemplates = weekPlan.days.map { day in
                 let weekday = calendar.component(.weekday, from: day.date)
-                let sessions = day.workouts.map { LegacySessionMapper.plannedSession(from: $0) }
-                return DayTemplate(weekday: weekday, sessions: sessions)
+                let entries = day.activeWorkouts.map(WeeklyTemplateWorkoutEntry.snapshot(from:))
+                return DayTemplate(weekday: weekday, workoutEntries: entries)
             }
         }
-        let template = WeeklyTemplate(name: name, note: note, days: dayTemplates)
+        var template = WeeklyTemplate(name: name, note: note, days: dayTemplates)
+        SyncMetadata.stampNewRecord(&template)
         weeklyTemplates.append(template)
         print("✅ Saved weekly template: \(name), total templates: \(weeklyTemplates.count)")
         persistWeeklyTemplates()
@@ -167,7 +168,7 @@ final class WeekPlannerViewModel: ObservableObject {
     }
 
     func hasWorkoutsInCurrentWeek() -> Bool {
-        weekPlan.days.contains { !$0.workouts.isEmpty }
+        weekPlan.days.contains { !$0.activeWorkouts.isEmpty }
     }
 
     func applyWeeklyTemplate(_ template: WeeklyTemplate, to start: Date, keepExisting: Bool = false) {
@@ -175,17 +176,19 @@ final class WeekPlannerViewModel: ObservableObject {
         for offset in 0..<7 {
             guard let date = calendar.date(byAdding: .day, value: offset, to: start) else { continue }
             let weekday = calendar.component(.weekday, from: date)
-            let templateWorkouts = (template.days.first(where: { $0.weekday == weekday })?.sessions ?? [])
-                .map { LegacySessionMapper.workout(from: $0, plannedDate: date) }
+            let templateWorkouts = (template.days.first(where: { $0.weekday == weekday })?.workoutEntries ?? [])
+                .map { $0.makeWorkout(plannedDate: date, linkedWeeklyTemplateId: template.id) }
 
             if keepExisting {
-                if let existingDay = weekPlan.days.first(where: { calendar.isDate($0.date, inSameDayAs: date) }) {
-                    days.append(DayPlan(date: date, workouts: existingDay.workouts + templateWorkouts))
-                } else {
-                    days.append(DayPlan(date: date, workouts: templateWorkouts))
-                }
+                let existing = weekPlan.days.first(where: { calendar.isDate($0.date, inSameDayAs: date) })?.workouts ?? []
+                days.append(DayPlan(date: date, workouts: existing + templateWorkouts))
             } else {
-                days.append(DayPlan(date: date, workouts: templateWorkouts))
+                let existing = weekPlan.days.first(where: { calendar.isDate($0.date, inSameDayAs: date) })?.workouts ?? []
+                let tombstoned = existing
+                    .filter { !$0.metadata.isDeleted }
+                    .map { SyncMetadata.softDelete($0) }
+                let retainedTombstones = existing.filter { $0.metadata.isDeleted }
+                days.append(DayPlan(date: date, workouts: retainedTombstones + tombstoned + templateWorkouts))
             }
         }
         weekPlan = WeekPlan(startOfWeek: start, days: days)
@@ -411,7 +414,7 @@ final class WeekPlannerViewModel: ObservableObject {
 
     private func hasAttachedRun(with uuid: String) -> Bool {
         for day in weekPlan.days {
-            for workout in day.workouts where workout.activityType.sessionKind == .run {
+            for workout in day.activeWorkouts where workout.activityType.sessionKind == .run {
                 if workout.linkedHealthKitUUID == uuid { return true }
             }
         }
@@ -458,7 +461,7 @@ final class WeekPlannerViewModel: ObservableObject {
             sigs.insert(runSignature(for: unattached))
         }
         for day in weekPlan.days {
-            for workout in day.workouts where workout.activityType.sessionKind == .run {
+            for workout in day.activeWorkouts where workout.activityType.sessionKind == .run {
                 if workout.hasPlannedEnduranceDetail {
                     sigs.insert(enduranceSignature(for: workout, planned: true, fallbackDate: day.date))
                 }

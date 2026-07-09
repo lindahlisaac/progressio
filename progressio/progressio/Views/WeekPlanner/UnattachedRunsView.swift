@@ -77,7 +77,7 @@ private struct UnattachedRunRow: View {
                                 selectedDate = day.date
                                 showDayPicker = false
                                 if let date = selectedDate {
-                                    let workouts = day.workouts.filter { $0.activityType.sessionKind == .run }
+                                    let workouts = day.activeWorkouts.filter { $0.activityType.sessionKind == .run }
                                     sessionsForDay = workouts
                                     if workouts.isEmpty {
                                         onAttach(date, run, nil)

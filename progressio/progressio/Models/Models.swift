@@ -206,6 +206,10 @@ struct DayPlan: Identifiable, Codable {
         self.etag = etag
     }
 
+    var activeWorkouts: [Workout] {
+        workouts.filter { !$0.metadata.isDeleted }
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
@@ -332,7 +336,7 @@ struct WeeklyTemplate: Identifiable, Codable {
 struct DayTemplate: Identifiable, Codable {
     let id: UUID
     var weekday: Int // 1 = Sunday ... 7 = Saturday
-    var sessions: [PlannedSession]
+    var workoutEntries: [WeeklyTemplateWorkoutEntry]
     var schemaVersion: Int
     var createdAt: Date?
     var updatedAt: Date?
@@ -342,7 +346,7 @@ struct DayTemplate: Identifiable, Codable {
     init(
         id: UUID = UUID(),
         weekday: Int,
-        sessions: [PlannedSession] = [],
+        workoutEntries: [WeeklyTemplateWorkoutEntry] = [],
         schemaVersion: Int = WorkoutSchema.currentVersion,
         createdAt: Date? = Date(),
         updatedAt: Date? = Date(),
@@ -351,7 +355,7 @@ struct DayTemplate: Identifiable, Codable {
     ) {
         self.id = id
         self.weekday = weekday
-        self.sessions = sessions
+        self.workoutEntries = workoutEntries
         self.schemaVersion = schemaVersion
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -363,12 +367,35 @@ struct DayTemplate: Identifiable, Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
         weekday = try container.decode(Int.self, forKey: .weekday)
-        sessions = try container.decode([PlannedSession].self, forKey: .sessions)
+        if let entries = try container.decodeIfPresent([WeeklyTemplateWorkoutEntry].self, forKey: .workoutEntries) {
+            workoutEntries = entries
+        } else if let sessions = try container.decodeIfPresent([PlannedSession].self, forKey: .sessions) {
+            workoutEntries = sessions.map(WeeklyTemplateWorkoutEntry.from(session:))
+        } else {
+            workoutEntries = []
+        }
         schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? WorkoutSchema.currentVersion
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? updatedAt
         isDeleted = try container.decodeIfPresent(Bool.self, forKey: .isDeleted) ?? false
         deletedAt = try container.decodeIfPresent(Date.self, forKey: .deletedAt)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(weekday, forKey: .weekday)
+        try container.encode(workoutEntries, forKey: .workoutEntries)
+        try container.encode(schemaVersion, forKey: .schemaVersion)
+        try container.encodeIfPresent(createdAt, forKey: .createdAt)
+        try container.encodeIfPresent(updatedAt, forKey: .updatedAt)
+        try container.encode(isDeleted, forKey: .isDeleted)
+        try container.encodeIfPresent(deletedAt, forKey: .deletedAt)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, weekday, workoutEntries, sessions
+        case schemaVersion, createdAt, updatedAt, isDeleted, deletedAt
     }
 }
 

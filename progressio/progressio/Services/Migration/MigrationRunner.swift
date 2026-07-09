@@ -23,6 +23,7 @@ final class MigrationRunner {
     MigrateWeekPlansAndWorkoutsStep(),
     MigrateTemplatesAndStrengthLogsStep(),
     MigrateEnduranceTemplatesStep(),
+    MigrateWeeklyTemplateSnapshotsStep(),
   ]
 
   /// Runs pending migrations on app launch. Safe to call multiple times.

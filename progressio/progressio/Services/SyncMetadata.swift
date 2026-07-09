@@ -35,6 +35,14 @@ enum SyncMetadata {
         return copy
     }
 
+    static func softDelete(_ workout: Workout, at date: Date = Date()) -> Workout {
+        var copy = workout
+        copy.metadata.isDeleted = true
+        copy.metadata.deletedAt = date
+        copy.metadata.updatedAt = date
+        return copy
+    }
+
     static func stampNewRecord(_ template: inout StrengthTemplate, at date: Date = Date()) {
         if template.createdAt == nil {
             template.createdAt = date

@@ -22,20 +22,24 @@ struct WeeklyTemplateDetailView: View {
             
             ForEach(orderedDays, id: \.id) { day in
                 Section(weekdayName(day.weekday)) {
-                    if day.sessions.isEmpty {
+                    if day.workoutEntries.isEmpty {
                         Text("Rest day")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
-                        ForEach(day.sessions) { session in
+                        ForEach(day.workoutEntries) { entry in
                             HStack {
-                                Image(systemName: session.kind.systemImage)
+                                Image(systemName: entry.activityType.sessionKind.systemImage)
                                     .foregroundStyle(.secondary)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(session.title)
+                                    Text(entry.title)
                                         .font(.subheadline)
-                                    if let runCat = session.runDetail?.category {
-                                        Text(runCat.rawValue)
+                                    if let runType = entry.runType {
+                                        Text(runType.rawValue)
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    } else if entry.activityType != .strength {
+                                        Text(entry.activityType.rawValue)
                                             .font(.caption2)
                                             .foregroundStyle(.secondary)
                                     }
@@ -115,41 +119,53 @@ struct WeeklyTemplateDetailView: View {
     @ViewBuilder
     private func weeklyDaySection(idx: Int, weekday: Int) -> some View {
         Section {
-            if editDraftDays[idx].sessions.isEmpty {
+            if editDraftDays[idx].workoutEntries.isEmpty {
                 Text("No workouts")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(editDraftDays[idx].sessions) { session in
+                ForEach(editDraftDays[idx].workoutEntries) { entry in
                     HStack {
-                        Image(systemName: session.kind.systemImage)
+                        Image(systemName: entry.activityType.sessionKind.systemImage)
                             .foregroundStyle(.secondary)
-                        Text(session.title)
+                        Text(entry.title)
                         Spacer()
-                        Text(session.kind.rawValue)
+                        Text(entry.activityType.rawValue)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
                 .onDelete { offsets in
-                    editDraftDays[idx].sessions.remove(atOffsets: offsets)
+                    editDraftDays[idx].workoutEntries.remove(atOffsets: offsets)
                 }
             }
-            
+
             Menu {
                 Button("Blank run") {
-                    editDraftDays[idx].sessions.append(
-                        PlannedSession(title: "Run", kind: .run, status: .planned, note: "Planned run")
+                    editDraftDays[idx].workoutEntries.append(
+                        WeeklyTemplateWorkoutEntry(
+                            activityType: .roadRun,
+                            title: "Run",
+                            notes: "Planned run"
+                        )
                     )
                 }
                 Button("Blank ride") {
-                    editDraftDays[idx].sessions.append(
-                        PlannedSession(title: "Ride", kind: .cycle, status: .planned, note: "Planned ride")
+                    editDraftDays[idx].workoutEntries.append(
+                        WeeklyTemplateWorkoutEntry(
+                            activityType: .bike,
+                            title: "Ride",
+                            notes: "Planned ride"
+                        )
                     )
                 }
                 Button("Blank strength") {
-                    editDraftDays[idx].sessions.append(
-                        PlannedSession(title: "Strength", kind: .strength, status: .planned, note: "Strength session")
+                    editDraftDays[idx].workoutEntries.append(
+                        WeeklyTemplateWorkoutEntry(
+                            activityType: .strength,
+                            title: "Strength",
+                            notes: "Strength session"
+                        )
                     )
                 }
                 Divider()
@@ -208,42 +224,41 @@ struct WeeklyTemplateDetailView: View {
 
     private func addStrengthTemplateToEditDraft(_ template: StrengthTemplate) {
         guard let dayIdx = selectedDayIndexForTemplate else { return }
-        let session = PlannedSession(
-            title: template.name,
-            kind: .strength,
-            status: .planned,
-            note: template.note,
-            templateName: template.name
+        var planned = PlannedValues.empty
+        planned.plannedStrengthRoutineSnapshot = TemplateSnapshot.plannedSnapshot(from: template)
+        editDraftDays[dayIdx].workoutEntries.append(
+            WeeklyTemplateWorkoutEntry(
+                activityType: .strength,
+                title: template.name,
+                notes: template.note,
+                plannedValues: planned,
+                linkedWorkoutTemplateId: template.id,
+                templateName: template.name
+            )
         )
-        editDraftDays[dayIdx].sessions.append(session)
         showingWorkoutTemplatePicker = false
     }
 
     private func addEnduranceTemplateToEditDraft(_ template: EnduranceTemplate) {
         guard let dayIdx = selectedDayIndexForTemplate else { return }
-        let runDetail: RunDetailData?
-        if template.activityType.sessionKind == .run || template.activityType == .bike {
-            runDetail = RunDetailData(
+        var planned = PlannedValues.empty
+        planned.plannedDistance = template.plannedDistance
+        planned.plannedDuration = template.plannedDuration
+        planned.plannedElevationGain = template.plannedElevationGain
+        planned.plannedDescription = template.description
+        planned.plannedIntensityRPE = template.intensityRPE
+        planned.plannedRoute = template.route
+        editDraftDays[dayIdx].workoutEntries.append(
+            WeeklyTemplateWorkoutEntry(
+                activityType: template.activityType,
+                runType: template.runType,
                 title: template.name,
-                notes: template.description ?? "",
-                distance: template.plannedDistance ?? "",
-                duration: template.plannedDuration ?? "",
-                averageHR: "",
-                category: template.runType?.runCategory,
-                elevationGain: template.plannedElevationGain
+                notes: template.description,
+                plannedValues: planned,
+                linkedWorkoutTemplateId: template.id,
+                templateName: template.name
             )
-        } else {
-            runDetail = nil
-        }
-        let session = PlannedSession(
-            title: template.name,
-            kind: template.activityType.sessionKind,
-            status: .planned,
-            note: template.description,
-            templateName: template.name,
-            runDetail: runDetail
         )
-        editDraftDays[dayIdx].sessions.append(session)
         showingWorkoutTemplatePicker = false
     }
 

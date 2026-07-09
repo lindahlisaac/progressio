@@ -81,4 +81,20 @@ enum TemplatePersistence {
         }
         return first["schemaVersion"] == nil
     }
+
+    /// True when any day still stores legacy `sessions` instead of `workoutEntries`.
+    static func jsonNeedsWeeklyTemplateSnapshotMigration(_ data: Data) -> Bool {
+        guard let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            return false
+        }
+        for template in array {
+            guard let days = template["days"] as? [[String: Any]] else { continue }
+            for day in days {
+                if day["sessions"] != nil, day["workoutEntries"] == nil {
+                    return true
+                }
+            }
+        }
+        return false
+    }
 }
