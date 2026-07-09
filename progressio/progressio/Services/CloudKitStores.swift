@@ -8,6 +8,7 @@ private enum CKConfig {
 
 private enum CKRecordType {
     static let template = "StrengthTemplate"
+    static let enduranceTemplate = "EnduranceTemplate"
     static let weeklyTemplate = "WeeklyTemplate"
     static let unattachedRun = "UnattachedRun"
     static let weekPlan = "WeekPlan"
@@ -88,6 +89,60 @@ struct CloudTemplateStore: TemplateStore {
                 return record
             } catch {
                 print("Encode template failed: \(error)")
+                return nil
+            }
+        }
+        modify(records: records)
+    }
+}
+
+struct CloudEnduranceTemplateStore: EnduranceTemplateStore {
+    func loadTemplates() -> [EnduranceTemplate]? {
+        let semaphore = DispatchSemaphore(value: 0)
+        var result: [EnduranceTemplate]?
+
+        let query = CKQuery(recordType: CKRecordType.enduranceTemplate, predicate: NSPredicate(value: true))
+        CKConfig.database.perform(query, inZoneWith: nil) { records, error in
+            defer { semaphore.signal() }
+            if let ckError = error as? CKError,
+               ckError.code == .unknownItem || ckError.code == .invalidArguments {
+                result = []
+                return
+            }
+            guard let records, error == nil else {
+                print("Cloud load endurance templates error: \(String(describing: error))")
+                return
+            }
+            result = records.compactMap { record in
+                guard let data = record[CKFields.payload] as? Data else { return nil }
+                do {
+                    var decoded: EnduranceTemplate = try decodePayload(data)
+                    decoded.updatedAt = record[CKFields.updatedAt] as? Date ?? decoded.updatedAt
+                    decoded.etag = record[CKFields.etag] as? String ?? decoded.etag
+                    return decoded
+                } catch {
+                    print("Decode endurance template failed: \(error)")
+                    return nil
+                }
+            }
+        }
+        semaphore.wait()
+        return result
+    }
+
+    func save(_ templates: [EnduranceTemplate]) {
+        let records: [CKRecord] = templates.compactMap { template in
+            let record = CKRecord(
+                recordType: CKRecordType.enduranceTemplate,
+                recordID: makeRecordID(id: template.id, type: CKRecordType.enduranceTemplate)
+            )
+            do {
+                record[CKFields.payload] = try encodePayload(template) as CKRecordValue
+                record[CKFields.updatedAt] = (template.updatedAt ?? Date()) as CKRecordValue
+                if let etag = template.etag { record[CKFields.etag] = etag as CKRecordValue }
+                return record
+            } catch {
+                print("Encode endurance template failed: \(error)")
                 return nil
             }
         }

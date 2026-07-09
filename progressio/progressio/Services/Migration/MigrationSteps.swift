@@ -46,3 +46,15 @@ struct MigrateTemplatesAndStrengthLogsStep: MigrationStep {
     try TemplateAndStrengthLogMigration.migrateAll()
   }
 }
+
+// MARK: - Task 009
+
+struct MigrateEnduranceTemplatesStep: MigrationStep {
+  let name = "Migrate endurance templates"
+  let resultingVersion = AppDataMigration.enduranceTemplatesMigratedVersion
+
+  func migrate(from currentVersion: Int) throws {
+    guard currentVersion < resultingVersion else { return }
+    try EnduranceTemplateMigration.migrateAll()
+  }
+}

@@ -80,23 +80,6 @@ extension Workout {
     }
 
     static func from(template: StrengthTemplate, plannedDate: Date) -> Workout {
-        if template.category == .run {
-            var planned = PlannedValues.empty
-            planned.plannedDescription = template.note
-            return Workout(
-                plannedDate: plannedDate,
-                title: template.name,
-                activityType: .roadRun,
-                runType: template.runCategory.flatMap(RunType.init(runCategory:)),
-                plannedValues: planned,
-                status: .planned,
-                source: .template,
-                linkedWorkoutTemplateId: template.id,
-                templateName: template.name,
-                notes: "From template"
-            )
-        }
-
         var planned = PlannedValues.empty
         planned.plannedStrengthRoutineSnapshot = TemplateSnapshot.plannedSnapshot(from: template)
         return Workout(
@@ -109,6 +92,28 @@ extension Workout {
             linkedWorkoutTemplateId: template.id,
             templateName: template.name,
             notes: "From template"
+        )
+    }
+
+    static func from(template: EnduranceTemplate, plannedDate: Date) -> Workout {
+        var planned = PlannedValues.empty
+        planned.plannedDistance = template.plannedDistance
+        planned.plannedDuration = template.plannedDuration
+        planned.plannedElevationGain = template.plannedElevationGain
+        planned.plannedDescription = template.description
+        planned.plannedIntensityRPE = template.intensityRPE
+        planned.plannedRoute = template.route
+        return Workout(
+            plannedDate: plannedDate,
+            title: template.name,
+            activityType: template.activityType,
+            runType: template.runType,
+            plannedValues: planned,
+            status: .planned,
+            source: .template,
+            linkedWorkoutTemplateId: template.id,
+            templateName: template.name,
+            notes: template.description ?? "From template"
         )
     }
 

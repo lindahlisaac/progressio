@@ -38,6 +38,40 @@ struct SyncingTemplateStore: TemplateStore {
     }
 }
 
+struct SyncingEnduranceTemplateStore: EnduranceTemplateStore {
+    private let local: EnduranceTemplateStore
+    private let cloud: EnduranceTemplateStore
+
+    init(local: EnduranceTemplateStore = FileEnduranceTemplateStore(), cloud: EnduranceTemplateStore = CloudEnduranceTemplateStore()) {
+        self.local = local
+        self.cloud = cloud
+    }
+
+    func loadTemplates() -> [EnduranceTemplate]? {
+        let localTemplates = local.loadTemplates() ?? []
+        let cloudTemplates = cloud.loadTemplates() ?? []
+        let merged = SyncRecordMerge.mergeByID(
+            local: localTemplates,
+            remote: cloudTemplates,
+            id: \.id,
+            updatedAt: \.updatedAt,
+            isDeleted: \.isDeleted
+        )
+        local.save(merged)
+        return merged
+    }
+
+    func save(_ templates: [EnduranceTemplate]) {
+        let stamped = templates.map { template -> EnduranceTemplate in
+            var copy = template
+            SyncMetadata.stampSave(&copy)
+            return copy
+        }
+        local.save(stamped)
+        cloud.save(stamped)
+    }
+}
+
 struct SyncingWeeklyTemplateStore: WeeklyTemplateStore {
     private let local: WeeklyTemplateStore
     private let cloud: WeeklyTemplateStore

@@ -336,9 +336,18 @@ Aligned with `tasks/README.md` ordering:
 - **`WeekPlannerView`** — removed `templatesViewModel` template-by-name lookup for strength detail navigation.
 - **Still legacy**: weekly template apply (Task 010); strength logs remain file-backed with snapshot sync on complete (full CloudKit sync is Task 021).
 
-### Next up — Task 009
+### Task 009 — Endurance Template Model Split
 
-- Endurance template model split.
+- **`EnduranceTemplate.swift`** — dedicated model with activity type, run type, planned distance/duration/elevation, description, RPE, route; sync metadata.
+- **Migration v4** — `EnduranceTemplateMigration` moves `StrengthTemplate` where `category == .run` into `enduranceTemplates.json`, preserving IDs; strength-only records remain in `templates.json`.
+- **Stores** — `EnduranceTemplateStore`, file/CloudKit/syncing wrappers parallel to strength templates.
+- **`Workout.from(template: EnduranceTemplate)`** — copies planned values into independent workout snapshot on apply.
+- **`TemplateLibraryViewModel`** — manages strength and endurance templates separately; `RunCategory.longRun` added with full `RunType` bridge.
+- **UI** — Templates library, planner template picker, and weekly template picker use `EnduranceTemplate` for endurance; strength templates unchanged.
+
+### Next up — Task 010
+
+- Weekly template snapshot-on-apply.
 
 ---
 
@@ -418,4 +427,4 @@ progressio/progressio/
 
 ---
 
-*Last updated: Task 008 complete.*
+*Last updated: Task 009 complete.*

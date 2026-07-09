@@ -14,8 +14,15 @@ struct TemplateLibraryView: View {
     @State private var newExerciseMinReps: Int = 6
     @State private var newExerciseMaxReps: Int = 10
     @State private var newRunCategory: RunCategory = .easy
+    @State private var newActivityType: ActivityType = .roadRun
+    @State private var newPlannedDistance: String = ""
+    @State private var newPlannedDuration: String = ""
+    @State private var newPlannedElevation: String = ""
+    @State private var newIntensityRPE: String = ""
     @State private var templatePendingDelete: StrengthTemplate?
+    @State private var endurancePendingDelete: EnduranceTemplate?
     @State private var showingDeleteAlert = false
+    @State private var showingEnduranceDeleteAlert = false
     @State private var selection: TemplateKind = .workout
     @State private var weeklyName: String = ""
     @State private var weeklyNote: String = ""
@@ -35,130 +42,14 @@ struct TemplateLibraryView: View {
             .pickerStyle(.segmented)
 
             if selection == .workout {
-                Section("Strength") {
-                    ForEach(viewModel.activeTemplates.filter { $0.category == .strength }) { template in
-                        NavigationLink {
-                            TemplateDetailView(template: template, viewModel: viewModel)
-                        } label: {
-                            VStack(alignment: .leading) {
-                                Text(template.name)
-                                    .font(.headline)
-                                if let note = template.note {
-                                    Text(note)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Text("\(template.exercises.count) exercises")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            Button(role: .destructive) {
-                                templatePendingDelete = template
-                                showingDeleteAlert = true
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
-                        }
-                    }
-                }
-
-                Section("Run") {
-                    ForEach(viewModel.activeTemplates.filter { $0.category == .run }) { template in
-                        NavigationLink {
-                            TemplateDetailView(template: template, viewModel: viewModel)
-                        } label: {
-                            VStack(alignment: .leading) {
-                                Text(template.name)
-                                    .font(.headline)
-                                if let note = template.note {
-                                    Text(note)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Text("\(template.exercises.count) items")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            Button(role: .destructive) {
-                                templatePendingDelete = template
-                                showingDeleteAlert = true
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
-                        }
-                    }
-                }
+                strengthTemplatesSection
+                enduranceTemplatesSection
             } else {
-                if weekViewModel.activeWeeklyTemplates.isEmpty {
-                    Text("No weekly templates yet. Tap + to create one.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .padding(.vertical, 8)
-                } else {
-                    Section {
-                        ForEach(weekViewModel.activeWeeklyTemplates) { template in
-                            NavigationLink {
-                                WeeklyTemplateDetailView(
-                                    template: template,
-                                    weekViewModel: weekViewModel,
-                                    templatesViewModel: viewModel
-                                )
-                            } label: {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(template.name)
-                                        .font(.headline)
-                                    if let note = template.note, !note.isEmpty {
-                                        Text(note)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    Text("\(template.days.flatMap { $0.sessions }.count) workouts")
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            .swipeActions(edge: .leading) {
-                                Button {
-                                    templateToApply = template
-                                    showingApplyAlert = true
-                                } label: {
-                                    Label("Apply", systemImage: "calendar.badge.plus")
-                                }
-                                .tint(.blue)
-                            }
-                            .swipeActions(edge: .trailing) {
-                                Button(role: .destructive) {
-                                    weekViewModel.deleteWeeklyTemplate(id: template.id)
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                            }
-                        }
-                    }
-                }
+                weeklyTemplatesSection
             }
         }
         .navigationTitle("Templates")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    if selection == .workout {
-                        showingAddSheet = true
-                    } else {
-                        weeklyDraftDays = TemplateLibraryView.blankWeek()
-                        weeklyName = ""
-                        weeklyNote = ""
-                        showingWeeklyAddSheet = true
-                    }
-                } label: {
-                    Label(selection == .workout ? "Add Template" : "Add Weekly", systemImage: "plus")
-                }
-            }
-        }
+        .toolbar { addToolbar }
         .alert("Delete template?", isPresented: $showingDeleteAlert, presenting: templatePendingDelete) { template in
             Button("Delete", role: .destructive) {
                 viewModel.deleteTemplate(id: template.id)
@@ -167,48 +58,211 @@ struct TemplateLibraryView: View {
         } message: { template in
             Text("This will remove \(template.name). This action cannot be undone.")
         }
-        .alert("Apply Template to Current Week?", isPresented: $showingApplyAlert, presenting: templateToApply) { template in
-            if weekViewModel.hasWorkoutsInCurrentWeek() {
-                Button("Override existing") {
-                    weekViewModel.applyWeeklyTemplate(template, to: weekViewModel.currentStartOfWeek, keepExisting: false)
-                }
-                Button("Keep existing") {
-                    weekViewModel.applyWeeklyTemplate(template, to: weekViewModel.currentStartOfWeek, keepExisting: true)
-                }
-                Button("Cancel", role: .cancel) { }
-            } else {
-                Button("Apply") {
-                    weekViewModel.applyWeeklyTemplate(template, to: weekViewModel.currentStartOfWeek, keepExisting: false)
-                }
-                Button("Cancel", role: .cancel) { }
+        .alert("Delete template?", isPresented: $showingEnduranceDeleteAlert, presenting: endurancePendingDelete) { template in
+            Button("Delete", role: .destructive) {
+                viewModel.deleteEnduranceTemplate(id: template.id)
             }
+            Button("Cancel", role: .cancel) { }
         } message: { template in
-            if weekViewModel.hasWorkoutsInCurrentWeek() {
-                Text("You have existing workouts this week. Choose to override them or keep them alongside '\(template.name)'.")
-            } else {
-                Text("This will apply '\(template.name)' to the current week.")
-            }
+            Text("This will remove \(template.name). This action cannot be undone.")
+        }
+        .alert("Apply Template to Current Week?", isPresented: $showingApplyAlert, presenting: templateToApply) { template in
+            applyWeeklyTemplateActions(template)
+        } message: { template in
+            applyWeeklyTemplateMessage(template)
         }
         .sheet(isPresented: $showingAddSheet) { workoutTemplateSheet }
         .sheet(isPresented: $showingWeeklyAddSheet) { weeklyTemplateSheet }
     }
 
-    private func saveTemplate() {
-        let exercises: [StrengthExercise]
-        if newTemplateCategory == .strength {
-            exercises = Self.exercises(from: newExercises)
-        } else {
-            exercises = []
+    @ViewBuilder
+    private var strengthTemplatesSection: some View {
+        Section("Strength") {
+            ForEach(viewModel.activeTemplates) { template in
+                NavigationLink {
+                    TemplateDetailView(template: template, viewModel: viewModel)
+                } label: {
+                    VStack(alignment: .leading) {
+                        Text(template.name)
+                            .font(.headline)
+                        if let note = template.note {
+                            Text(note)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Text("\(template.exercises.count) exercises")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) {
+                        templatePendingDelete = template
+                        showingDeleteAlert = true
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
+            }
         }
+    }
 
-        viewModel.addTemplate(
-            name: newTemplateName,
-            note: newTemplateNote,
-            category: newTemplateCategory,
-            exercises: exercises,
-            runCategory: newTemplateCategory == .run ? newRunCategory : nil
-        )
+    @ViewBuilder
+    private var enduranceTemplatesSection: some View {
+        Section("Endurance") {
+            ForEach(viewModel.activeEnduranceTemplates) { template in
+                NavigationLink {
+                    EnduranceTemplateDetailView(template: template, viewModel: viewModel)
+                } label: {
+                    VStack(alignment: .leading) {
+                        Text(template.name)
+                            .font(.headline)
+                        if let description = template.description {
+                            Text(description)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        HStack(spacing: 6) {
+                            Text(template.activityType.rawValue)
+                            if let runType = template.runType {
+                                Text("• \(runType.rawValue)")
+                            }
+                        }
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) {
+                        endurancePendingDelete = template
+                        showingEnduranceDeleteAlert = true
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var weeklyTemplatesSection: some View {
+        if weekViewModel.activeWeeklyTemplates.isEmpty {
+            Text("No weekly templates yet. Tap + to create one.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .padding(.vertical, 8)
+        } else {
+            Section {
+                ForEach(weekViewModel.activeWeeklyTemplates) { template in
+                    NavigationLink {
+                        WeeklyTemplateDetailView(
+                            template: template,
+                            weekViewModel: weekViewModel,
+                            templatesViewModel: viewModel
+                        )
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(template.name)
+                                .font(.headline)
+                            if let note = template.note, !note.isEmpty {
+                                Text(note)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Text("\(template.days.flatMap { $0.sessions }.count) workouts")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .swipeActions(edge: .leading) {
+                        Button {
+                            templateToApply = template
+                            showingApplyAlert = true
+                        } label: {
+                            Label("Apply", systemImage: "calendar.badge.plus")
+                        }
+                        .tint(.blue)
+                    }
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) {
+                            weekViewModel.deleteWeeklyTemplate(id: template.id)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var addToolbar: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
+            Button {
+                if selection == .workout {
+                    showingAddSheet = true
+                } else {
+                    weeklyDraftDays = TemplateLibraryView.blankWeek()
+                    weeklyName = ""
+                    weeklyNote = ""
+                    showingWeeklyAddSheet = true
+                }
+            } label: {
+                Label(selection == .workout ? "Add Template" : "Add Weekly", systemImage: "plus")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func applyWeeklyTemplateActions(_ template: WeeklyTemplate) -> some View {
+        if weekViewModel.hasWorkoutsInCurrentWeek() {
+            Button("Override existing") {
+                weekViewModel.applyWeeklyTemplate(template, to: weekViewModel.currentStartOfWeek, keepExisting: false)
+            }
+            Button("Keep existing") {
+                weekViewModel.applyWeeklyTemplate(template, to: weekViewModel.currentStartOfWeek, keepExisting: true)
+            }
+            Button("Cancel", role: .cancel) { }
+        } else {
+            Button("Apply") {
+                weekViewModel.applyWeeklyTemplate(template, to: weekViewModel.currentStartOfWeek, keepExisting: false)
+            }
+            Button("Cancel", role: .cancel) { }
+        }
+    }
+
+    private func applyWeeklyTemplateMessage(_ template: WeeklyTemplate) -> Text {
+        if weekViewModel.hasWorkoutsInCurrentWeek() {
+            return Text("You have existing workouts this week. Choose to override them or keep them alongside '\(template.name)'.")
+        }
+        return Text("This will apply '\(template.name)' to the current week.")
+    }
+
+    private func saveTemplate() {
+        if newTemplateCategory == .strength {
+            viewModel.addTemplate(
+                name: newTemplateName,
+                note: newTemplateNote,
+                exercises: Self.exercises(from: newExercises)
+            )
+        } else {
+            viewModel.addEnduranceTemplate(
+                name: newTemplateName,
+                activityType: newActivityType,
+                runType: newActivityType == .bike ? nil : RunType(runCategory: newRunCategory),
+                plannedDistance: Self.trimmedOrNil(newPlannedDistance),
+                plannedDuration: Self.trimmedOrNil(newPlannedDuration),
+                plannedElevationGain: Self.trimmedOrNil(newPlannedElevation),
+                description: Self.trimmedOrNil(newTemplateNote),
+                intensityRPE: Self.trimmedOrNil(newIntensityRPE)
+            )
+        }
         dismissSheet()
+    }
+
+    private static func trimmedOrNil(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private func dismissSheet() {
@@ -222,6 +276,11 @@ struct TemplateLibraryView: View {
         newExerciseMinReps = 6
         newExerciseMaxReps = 10
         newRunCategory = .easy
+        newActivityType = .roadRun
+        newPlannedDistance = ""
+        newPlannedDuration = ""
+        newPlannedElevation = ""
+        newIntensityRPE = ""
     }
 
     static func exercises(from inputs: [NewExerciseInput]) -> [StrengthExercise] {
@@ -258,13 +317,29 @@ struct TemplateLibraryView: View {
                     TextField("Note (optional)", text: $newTemplateNote, axis: .vertical)
                         .lineLimit(3, reservesSpace: true)
                 }
-                if newTemplateCategory == .run {
-                    Section("Run type") {
-                        Picker("Run type", selection: $newRunCategory) {
-                            ForEach(RunCategory.allCases) { cat in
-                                Text(cat.rawValue).tag(cat)
+                if newTemplateCategory == .endurance {
+                    Section("Activity") {
+                        Picker("Activity type", selection: $newActivityType) {
+                            ForEach(ActivityType.enduranceTemplateTypes) { type in
+                                Text(type.rawValue).tag(type)
                             }
                         }
+                    }
+                    if newActivityType != .bike {
+                        Section("Run type") {
+                            Picker("Run type", selection: $newRunCategory) {
+                                ForEach(RunCategory.allCases) { cat in
+                                    Text(cat.rawValue).tag(cat)
+                                }
+                            }
+                        }
+                    }
+                    Section("Planned values") {
+                        TextField("Distance (optional)", text: $newPlannedDistance)
+                        TextField("Duration (optional)", text: $newPlannedDuration)
+                        TextField("Elevation gain (optional)", text: $newPlannedElevation)
+                        TextField("Intensity RPE (optional)", text: $newIntensityRPE)
+                            .keyboardType(.decimalPad)
                     }
                 }
                 if newTemplateCategory == .strength {
@@ -391,63 +466,113 @@ struct TemplateLibraryView: View {
     
     private var templatePickerList: some View {
         List {
-            ForEach(viewModel.activeTemplates) { template in
-                Button {
-                    addTemplateToWeeklyDraft(template)
-                } label: {
-                    templatePickerRow(template)
+            if !viewModel.activeTemplates.isEmpty {
+                Section("Strength") {
+                    ForEach(viewModel.activeTemplates) { template in
+                        Button {
+                            addStrengthTemplateToWeeklyDraft(template)
+                        } label: {
+                            strengthTemplatePickerRow(template)
+                        }
+                    }
+                }
+            }
+            if !viewModel.activeEnduranceTemplates.isEmpty {
+                Section("Endurance") {
+                    ForEach(viewModel.activeEnduranceTemplates) { template in
+                        Button {
+                            addEnduranceTemplateToWeeklyDraft(template)
+                        } label: {
+                            enduranceTemplatePickerRow(template)
+                        }
+                    }
                 }
             }
         }
     }
-    
-    private func addTemplateToWeeklyDraft(_ template: StrengthTemplate) {
+
+    private func addStrengthTemplateToWeeklyDraft(_ template: StrengthTemplate) {
         guard let dayIdx = selectedDayIndexForTemplate else { return }
-        
-        let runDetail: RunDetailData?
-        if template.category == .run {
-            runDetail = RunDetailData(
-                title: template.name,
-                notes: template.note ?? "",
-                distance: "",
-                duration: "",
-                averageHR: "",
-                category: template.runCategory
-            )
-        } else {
-            runDetail = nil
-        }
-        
         let session = PlannedSession(
             title: template.name,
-            kind: template.category == .strength ? .strength : .run,
+            kind: .strength,
             status: .planned,
             note: template.note,
-            templateName: template.name,
-            runDetail: runDetail
+            templateName: template.name
         )
         weeklyDraftDays[dayIdx].sessions.append(session)
         showingWorkoutTemplatePicker = false
     }
-    
+
+    private func addEnduranceTemplateToWeeklyDraft(_ template: EnduranceTemplate) {
+        guard let dayIdx = selectedDayIndexForTemplate else { return }
+        let runDetail: RunDetailData?
+        if template.activityType.sessionKind == .run {
+            runDetail = RunDetailData(
+                title: template.name,
+                notes: template.description ?? "",
+                distance: template.plannedDistance ?? "",
+                duration: template.plannedDuration ?? "",
+                averageHR: "",
+                category: template.runType?.runCategory,
+                elevationGain: template.plannedElevationGain
+            )
+        } else {
+            runDetail = RunDetailData(
+                title: template.name,
+                notes: template.description ?? "",
+                distance: template.plannedDistance ?? "",
+                duration: template.plannedDuration ?? "",
+                averageHR: ""
+            )
+        }
+        let session = PlannedSession(
+            title: template.name,
+            kind: template.activityType.sessionKind,
+            status: .planned,
+            note: template.description,
+            templateName: template.name,
+            runDetail: template.activityType.sessionKind == .run || template.activityType == .bike ? runDetail : nil
+        )
+        weeklyDraftDays[dayIdx].sessions.append(session)
+        showingWorkoutTemplatePicker = false
+    }
+
     @ViewBuilder
-    private func templatePickerRow(_ template: StrengthTemplate) -> some View {
+    private func strengthTemplatePickerRow(_ template: StrengthTemplate) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(template.name)
+                .font(.body.weight(.semibold))
+                .foregroundColor(.primary)
+            Label("Strength", systemImage: TemplateCategory.strength.systemImage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if let note = template.note, !note.isEmpty {
+                Text(note)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func enduranceTemplatePickerRow(_ template: EnduranceTemplate) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(template.name)
                 .font(.body.weight(.semibold))
                 .foregroundColor(.primary)
             HStack {
-                Label(template.category.rawValue, systemImage: template.category.systemImage)
+                Label(template.activityType.rawValue, systemImage: template.activityType.sessionKind.systemImage)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                if template.category == .run, let runCat = template.runCategory {
-                    Text("• \(runCat.rawValue)")
+                if let runType = template.runType {
+                    Text("• \(runType.rawValue)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
-            if let note = template.note, !note.isEmpty {
-                Text(note)
+            if let description = template.description, !description.isEmpty {
+                Text(description)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -495,7 +620,6 @@ struct TemplateDetailView: View {
     @State private var showingEdit = false
     @State private var editName: String = ""
     @State private var editNote: String = ""
-    @State private var editRunCategory: RunCategory = .easy
     @State private var editExercises: [NewExerciseInput] = []
     @State private var editExerciseName: String = ""
     @State private var editExerciseSetsCount: String = ""
@@ -504,9 +628,21 @@ struct TemplateDetailView: View {
 
     var body: some View {
         List {
-            templateInfoSection
-            templateNotesSection
-            templateExercisesList
+            Section {
+                Label("Strength", systemImage: TemplateCategory.strength.systemImage)
+            }
+            if let note = template.note, !note.isEmpty {
+                Section("Notes") {
+                    Text(note)
+                }
+            }
+            ForEach(template.exercises) { exercise in
+                Section(exercise.name) {
+                    ForEach(exercise.sets) { set in
+                        TemplateSetRow(set: set)
+                    }
+                }
+            }
         }
         .navigationTitle(template.name)
         .toolbar {
@@ -520,7 +656,6 @@ struct TemplateDetailView: View {
                 viewModel: viewModel,
                 editName: $editName,
                 editNote: $editNote,
-                editRunCategory: $editRunCategory,
                 editExercises: $editExercises,
                 editExerciseName: $editExerciseName,
                 editExerciseSetsCount: $editExerciseSetsCount,
@@ -531,42 +666,9 @@ struct TemplateDetailView: View {
         }
     }
 
-    @ViewBuilder
-    private var templateInfoSection: some View {
-        Section {
-            Label(template.category.rawValue, systemImage: template.category.systemImage)
-            if template.category == .run, let runCat = template.runCategory {
-                Label("Run type: \(runCat.rawValue)", systemImage: "tag")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var templateNotesSection: some View {
-        if let note = template.note, !note.isEmpty {
-            Section("Notes") {
-                Text(note)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var templateExercisesList: some View {
-        ForEach(template.exercises) { exercise in
-            Section(exercise.name) {
-                ForEach(exercise.sets) { set in
-                    TemplateSetRow(set: set)
-                }
-            }
-        }
-    }
-
     private func beginEditing() {
         editName = template.name
         editNote = template.note ?? ""
-        editRunCategory = template.runCategory ?? .easy
         editExercises = TemplateLibraryView.exerciseInputs(from: template.exercises)
         editExerciseName = ""
         editExerciseSetsCount = ""
@@ -604,7 +706,6 @@ private struct TemplateEditSheet: View {
     @ObservedObject var viewModel: TemplateLibraryViewModel
     @Binding var editName: String
     @Binding var editNote: String
-    @Binding var editRunCategory: RunCategory
     @Binding var editExercises: [NewExerciseInput]
     @Binding var editExerciseName: String
     @Binding var editExerciseSetsCount: String
@@ -620,24 +721,13 @@ private struct TemplateEditSheet: View {
                     TextField("Note (optional)", text: $editNote, axis: .vertical)
                         .lineLimit(3, reservesSpace: true)
                 }
-                if template.category == .run {
-                    Section("Run type") {
-                        Picker("Run type", selection: $editRunCategory) {
-                            ForEach(RunCategory.allCases) { cat in
-                                Text(cat.rawValue).tag(cat)
-                            }
-                        }
-                    }
-                }
-                if template.category == .strength {
-                    StrengthTemplateExerciseEditor(
-                        exercises: $editExercises,
-                        exerciseName: $editExerciseName,
-                        exerciseSetsCount: $editExerciseSetsCount,
-                        exerciseMinReps: $editExerciseMinReps,
-                        exerciseMaxReps: $editExerciseMaxReps
-                    )
-                }
+                StrengthTemplateExerciseEditor(
+                    exercises: $editExercises,
+                    exerciseName: $editExerciseName,
+                    exerciseSetsCount: $editExerciseSetsCount,
+                    exerciseMinReps: $editExerciseMinReps,
+                    exerciseMaxReps: $editExerciseMaxReps
+                )
             }
             .navigationTitle("Edit Template")
             .toolbar {
@@ -654,24 +744,164 @@ private struct TemplateEditSheet: View {
 
     private var isSaveDisabled: Bool {
         let trimmedName = editName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmedName.isEmpty { return true }
-        if template.category == .strength {
-            return editExercises.isEmpty
-        }
-        return false
+        return trimmedName.isEmpty || editExercises.isEmpty
     }
 
     private func save() {
         var updated = template
         updated.name = editName.trimmingCharacters(in: .whitespacesAndNewlines)
         updated.note = editNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editNote
-        if updated.category == .run {
-            updated.runCategory = editRunCategory
-        }
-        if updated.category == .strength {
-            updated.exercises = TemplateLibraryView.exercises(from: editExercises)
-        }
+        updated.exercises = TemplateLibraryView.exercises(from: editExercises)
         viewModel.updateTemplate(updated)
+        isPresented = false
+    }
+}
+
+struct EnduranceTemplateDetailView: View {
+    let template: EnduranceTemplate
+    @ObservedObject var viewModel: TemplateLibraryViewModel
+
+    @State private var showingEdit = false
+    @State private var editName: String = ""
+    @State private var editDescription: String = ""
+    @State private var editActivityType: ActivityType = .roadRun
+    @State private var editRunCategory: RunCategory = .easy
+    @State private var editPlannedDistance: String = ""
+    @State private var editPlannedDuration: String = ""
+    @State private var editPlannedElevation: String = ""
+    @State private var editIntensityRPE: String = ""
+
+    var body: some View {
+        List {
+            Section {
+                Label(template.activityType.rawValue, systemImage: template.activityType.sessionKind.systemImage)
+                if let runType = template.runType {
+                    Label("Run type: \(runType.rawValue)", systemImage: "tag")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if let distance = template.plannedDistance, !distance.isEmpty {
+                Section("Planned distance") { Text(distance) }
+            }
+            if let duration = template.plannedDuration, !duration.isEmpty {
+                Section("Planned duration") { Text(duration) }
+            }
+            if let elevation = template.plannedElevationGain, !elevation.isEmpty {
+                Section("Elevation gain") { Text(elevation) }
+            }
+            if let rpe = template.intensityRPE, !rpe.isEmpty {
+                Section("Intensity RPE") { Text(rpe) }
+            }
+            if let description = template.description, !description.isEmpty {
+                Section("Description") { Text(description) }
+            }
+        }
+        .navigationTitle(template.name)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Edit", action: beginEditing)
+            }
+        }
+        .sheet(isPresented: $showingEdit) {
+            EnduranceTemplateEditSheet(
+                template: template,
+                viewModel: viewModel,
+                editName: $editName,
+                editDescription: $editDescription,
+                editActivityType: $editActivityType,
+                editRunCategory: $editRunCategory,
+                editPlannedDistance: $editPlannedDistance,
+                editPlannedDuration: $editPlannedDuration,
+                editPlannedElevation: $editPlannedElevation,
+                editIntensityRPE: $editIntensityRPE,
+                isPresented: $showingEdit
+            )
+        }
+    }
+
+    private func beginEditing() {
+        editName = template.name
+        editDescription = template.description ?? ""
+        editActivityType = template.activityType
+        editRunCategory = template.runType?.runCategory ?? .easy
+        editPlannedDistance = template.plannedDistance ?? ""
+        editPlannedDuration = template.plannedDuration ?? ""
+        editPlannedElevation = template.plannedElevationGain ?? ""
+        editIntensityRPE = template.intensityRPE ?? ""
+        showingEdit = true
+    }
+}
+
+private struct EnduranceTemplateEditSheet: View {
+    let template: EnduranceTemplate
+    @ObservedObject var viewModel: TemplateLibraryViewModel
+    @Binding var editName: String
+    @Binding var editDescription: String
+    @Binding var editActivityType: ActivityType
+    @Binding var editRunCategory: RunCategory
+    @Binding var editPlannedDistance: String
+    @Binding var editPlannedDuration: String
+    @Binding var editPlannedElevation: String
+    @Binding var editIntensityRPE: String
+    @Binding var isPresented: Bool
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Template Info") {
+                    TextField("Name", text: $editName)
+                    TextField("Description (optional)", text: $editDescription, axis: .vertical)
+                        .lineLimit(3, reservesSpace: true)
+                }
+                Section("Activity") {
+                    Picker("Activity type", selection: $editActivityType) {
+                        ForEach(ActivityType.enduranceTemplateTypes) { type in
+                            Text(type.rawValue).tag(type)
+                        }
+                    }
+                }
+                if editActivityType != .bike {
+                    Section("Run type") {
+                        Picker("Run type", selection: $editRunCategory) {
+                            ForEach(RunCategory.allCases) { cat in
+                                Text(cat.rawValue).tag(cat)
+                            }
+                        }
+                    }
+                }
+                Section("Planned values") {
+                    TextField("Distance (optional)", text: $editPlannedDistance)
+                    TextField("Duration (optional)", text: $editPlannedDuration)
+                    TextField("Elevation gain (optional)", text: $editPlannedElevation)
+                    TextField("Intensity RPE (optional)", text: $editIntensityRPE)
+                        .keyboardType(.decimalPad)
+                }
+            }
+            .navigationTitle("Edit Template")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { isPresented = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save", action: save)
+                        .disabled(editName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+    }
+
+    private func save() {
+        var updated = template
+        updated.name = editName.trimmingCharacters(in: .whitespacesAndNewlines)
+        updated.description = trimmedOrNil(editDescription)
+        updated.activityType = editActivityType
+        updated.runType = editActivityType == .bike ? nil : RunType(runCategory: editRunCategory)
+        updated.plannedDistance = trimmedOrNil(editPlannedDistance)
+        updated.plannedDuration = trimmedOrNil(editPlannedDuration)
+        updated.plannedElevationGain = trimmedOrNil(editPlannedElevation)
+        updated.intensityRPE = trimmedOrNil(editIntensityRPE)
+        viewModel.updateEnduranceTemplate(updated)
         isPresented = false
     }
 }
@@ -773,5 +1003,10 @@ private struct StrengthTemplateExerciseEditor: View {
     private func moveExercises(from offsets: IndexSet, to destination: Int) {
         exercises.move(fromOffsets: offsets, toOffset: destination)
     }
+}
+
+private func trimmedOrNil(_ value: String) -> String? {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : trimmed
 }
 

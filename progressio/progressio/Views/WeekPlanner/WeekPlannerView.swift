@@ -59,20 +59,54 @@ struct WeekPlannerView: View {
         .sheet(isPresented: $showingTemplatePicker) {
             NavigationStack {
                 List {
-                    ForEach(templatesViewModel.activeTemplates) { template in
-                        Button {
-                            if let date = templatePickerDate {
-                                viewModel.addTemplateSession(template: template, on: date)
+                    if !templatesViewModel.activeTemplates.isEmpty {
+                        Section("Strength") {
+                            ForEach(templatesViewModel.activeTemplates) { template in
+                                Button {
+                                    if let date = templatePickerDate {
+                                        viewModel.addTemplateSession(template: template, on: date)
+                                    }
+                                    showingTemplatePicker = false
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(template.name)
+                                            .font(.body.weight(.semibold))
+                                        if let note = template.note {
+                                            Text(note)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                }
                             }
-                            showingTemplatePicker = false
-                        } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(template.name)
-                                    .font(.body.weight(.semibold))
-                                if let note = template.note {
-                                    Text(note)
+                        }
+                    }
+                    if !templatesViewModel.activeEnduranceTemplates.isEmpty {
+                        Section("Endurance") {
+                            ForEach(templatesViewModel.activeEnduranceTemplates) { template in
+                                Button {
+                                    if let date = templatePickerDate {
+                                        viewModel.addEnduranceSession(template: template, on: date)
+                                    }
+                                    showingTemplatePicker = false
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(template.name)
+                                            .font(.body.weight(.semibold))
+                                        HStack {
+                                            Text(template.activityType.rawValue)
+                                            if let runType = template.runType {
+                                                Text("• \(runType.rawValue)")
+                                            }
+                                        }
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
+                                        if let distance = template.plannedDistance, !distance.isEmpty {
+                                            Text("Distance: \(distance)")
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
                                 }
                             }
                         }

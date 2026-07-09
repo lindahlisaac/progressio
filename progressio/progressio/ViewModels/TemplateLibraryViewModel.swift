@@ -3,26 +3,48 @@ import Combine
 
 final class TemplateLibraryViewModel: ObservableObject {
     @Published private(set) var templates: [StrengthTemplate]
+    @Published private(set) var enduranceTemplates: [EnduranceTemplate]
     private let store: TemplateStore
+    private let enduranceStore: EnduranceTemplateStore
 
     var activeTemplates: [StrengthTemplate] {
-        templates.filter { !$0.isDeleted }
+        templates.filter { !$0.isDeleted && $0.category == .strength }
     }
 
-    init(store: TemplateStore = SyncingTemplateStore(), templates: [StrengthTemplate]? = nil) {
+    var activeEnduranceTemplates: [EnduranceTemplate] {
+        enduranceTemplates.filter { !$0.isDeleted }
+    }
+
+    init(
+        store: TemplateStore = SyncingTemplateStore(),
+        enduranceStore: EnduranceTemplateStore = SyncingEnduranceTemplateStore(),
+        templates: [StrengthTemplate]? = nil,
+        enduranceTemplates: [EnduranceTemplate]? = nil
+    ) {
         self.store = store
+        self.enduranceStore = enduranceStore
         if let templates {
             self.templates = templates
         } else if let loaded = store.loadTemplates() {
             self.templates = loaded
         } else {
-            let samples = TemplateLibraryViewModel.makeSamples()
-            self.templates = samples
+            self.templates = TemplateLibraryViewModel.makeSamples()
+        }
+
+        if let enduranceTemplates {
+            self.enduranceTemplates = enduranceTemplates
+        } else if let loaded = enduranceStore.loadTemplates() {
+            self.enduranceTemplates = loaded
+        } else {
+            self.enduranceTemplates = []
+        }
+
+        if templates == nil, store.loadTemplates() == nil {
             persistTemplates()
         }
     }
 
-    func addTemplate(name: String, note: String?, category: TemplateCategory, exercises: [StrengthExercise], runCategory: RunCategory? = nil) {
+    func addTemplate(name: String, note: String?, exercises: [StrengthExercise]) {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else { return }
 
@@ -34,10 +56,46 @@ final class TemplateLibraryViewModel: ObservableObject {
             cleanedNote = nil
         }
 
-        var newTemplate = StrengthTemplate(name: trimmedName, category: category, exercises: exercises, note: cleanedNote, runCategory: runCategory)
+        var newTemplate = StrengthTemplate(
+            name: trimmedName,
+            category: .strength,
+            exercises: exercises,
+            note: cleanedNote,
+            runCategory: nil
+        )
         SyncMetadata.stampNewRecord(&newTemplate)
         templates.append(newTemplate)
         persistTemplates()
+    }
+
+    func addEnduranceTemplate(
+        name: String,
+        activityType: ActivityType,
+        runType: RunType? = nil,
+        plannedDistance: String? = nil,
+        plannedDuration: String? = nil,
+        plannedElevationGain: String? = nil,
+        description: String? = nil,
+        intensityRPE: String? = nil,
+        route: String? = nil
+    ) {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return }
+
+        var newTemplate = EnduranceTemplate(
+            name: trimmedName,
+            activityType: activityType,
+            runType: activityType == .bike ? nil : runType,
+            plannedDistance: plannedDistance,
+            plannedDuration: plannedDuration,
+            plannedElevationGain: plannedElevationGain,
+            description: description,
+            intensityRPE: intensityRPE,
+            route: route
+        )
+        SyncMetadata.stampNewRecord(&newTemplate)
+        enduranceTemplates.append(newTemplate)
+        persistEnduranceTemplates()
     }
 
     func updateTemplate(_ updated: StrengthTemplate) {
@@ -49,15 +107,33 @@ final class TemplateLibraryViewModel: ObservableObject {
         }
     }
 
+    func updateEnduranceTemplate(_ updated: EnduranceTemplate) {
+        if let idx = enduranceTemplates.firstIndex(where: { $0.id == updated.id }) {
+            var stamped = updated
+            SyncMetadata.stampSave(&stamped)
+            enduranceTemplates[idx] = stamped
+            persistEnduranceTemplates()
+        }
+    }
+
     func deleteTemplate(id: UUID) {
         guard let idx = templates.firstIndex(where: { $0.id == id }) else { return }
         templates[idx] = SyncMetadata.softDelete(templates[idx])
         persistTemplates()
     }
 
+    func deleteEnduranceTemplate(id: UUID) {
+        guard let idx = enduranceTemplates.firstIndex(where: { $0.id == id }) else { return }
+        enduranceTemplates[idx] = SyncMetadata.softDelete(enduranceTemplates[idx])
+        persistEnduranceTemplates()
+    }
+
     func reloadFromStore() {
         if let loaded = store.loadTemplates() {
             templates = loaded
+        }
+        if let loaded = enduranceStore.loadTemplates() {
+            enduranceTemplates = loaded
         }
     }
 
@@ -83,8 +159,8 @@ final class TemplateLibraryViewModel: ObservableObject {
                         ]
                     )
                 ],
-                note: "Baseline template for push focus days."
-                , runCategory: nil
+                note: "Baseline template for push focus days.",
+                runCategory: nil
             ),
             StrengthTemplate(
                 name: "Lower Mixed",
@@ -114,5 +190,8 @@ final class TemplateLibraryViewModel: ObservableObject {
     private func persistTemplates() {
         store.save(templates)
     }
-}
 
+    private func persistEnduranceTemplates() {
+        enduranceStore.save(enduranceTemplates)
+    }
+}

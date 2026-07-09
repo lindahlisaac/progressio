@@ -14,8 +14,11 @@ enum AppDataMigration {
   /// Templates and strength logs migrated (Task 005).
   static let templatesMigratedVersion = 3
 
+  /// Run templates split into EnduranceTemplate (Task 009).
+  static let enduranceTemplatesMigratedVersion = 4
+
   /// Highest migration step that runs in the current app release.
-  static let latestVersion = templatesMigratedVersion
+  static let latestVersion = enduranceTemplatesMigratedVersion
 
   static let versionFileName = "dataVersion.json"
 }

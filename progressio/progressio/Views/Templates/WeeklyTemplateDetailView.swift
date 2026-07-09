@@ -181,63 +181,107 @@ struct WeeklyTemplateDetailView: View {
     
     private var templatePickerList: some View {
         List {
-            ForEach(templatesViewModel.activeTemplates) { template in
-                Button {
-                    addTemplateToEditDraft(template)
-                } label: {
-                    templatePickerRow(template)
+            if !templatesViewModel.activeTemplates.isEmpty {
+                Section("Strength") {
+                    ForEach(templatesViewModel.activeTemplates) { template in
+                        Button {
+                            addStrengthTemplateToEditDraft(template)
+                        } label: {
+                            strengthTemplatePickerRow(template)
+                        }
+                    }
+                }
+            }
+            if !templatesViewModel.activeEnduranceTemplates.isEmpty {
+                Section("Endurance") {
+                    ForEach(templatesViewModel.activeEnduranceTemplates) { template in
+                        Button {
+                            addEnduranceTemplateToEditDraft(template)
+                        } label: {
+                            enduranceTemplatePickerRow(template)
+                        }
+                    }
                 }
             }
         }
     }
-    
-    private func addTemplateToEditDraft(_ template: StrengthTemplate) {
+
+    private func addStrengthTemplateToEditDraft(_ template: StrengthTemplate) {
         guard let dayIdx = selectedDayIndexForTemplate else { return }
-        
+        let session = PlannedSession(
+            title: template.name,
+            kind: .strength,
+            status: .planned,
+            note: template.note,
+            templateName: template.name
+        )
+        editDraftDays[dayIdx].sessions.append(session)
+        showingWorkoutTemplatePicker = false
+    }
+
+    private func addEnduranceTemplateToEditDraft(_ template: EnduranceTemplate) {
+        guard let dayIdx = selectedDayIndexForTemplate else { return }
         let runDetail: RunDetailData?
-        if template.category == .run {
+        if template.activityType.sessionKind == .run || template.activityType == .bike {
             runDetail = RunDetailData(
                 title: template.name,
-                notes: template.note ?? "",
-                distance: "",
-                duration: "",
+                notes: template.description ?? "",
+                distance: template.plannedDistance ?? "",
+                duration: template.plannedDuration ?? "",
                 averageHR: "",
-                category: template.runCategory
+                category: template.runType?.runCategory,
+                elevationGain: template.plannedElevationGain
             )
         } else {
             runDetail = nil
         }
-        
         let session = PlannedSession(
             title: template.name,
-            kind: template.category == .strength ? .strength : .run,
+            kind: template.activityType.sessionKind,
             status: .planned,
-            note: template.note,
+            note: template.description,
             templateName: template.name,
             runDetail: runDetail
         )
         editDraftDays[dayIdx].sessions.append(session)
         showingWorkoutTemplatePicker = false
     }
-    
+
     @ViewBuilder
-    private func templatePickerRow(_ template: StrengthTemplate) -> some View {
+    private func strengthTemplatePickerRow(_ template: StrengthTemplate) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(template.name)
+                .font(.body.weight(.semibold))
+                .foregroundColor(.primary)
+            Label("Strength", systemImage: TemplateCategory.strength.systemImage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if let note = template.note, !note.isEmpty {
+                Text(note)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func enduranceTemplatePickerRow(_ template: EnduranceTemplate) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(template.name)
                 .font(.body.weight(.semibold))
                 .foregroundColor(.primary)
             HStack {
-                Label(template.category.rawValue, systemImage: template.category.systemImage)
+                Label(template.activityType.rawValue, systemImage: template.activityType.sessionKind.systemImage)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                if template.category == .run, let runCat = template.runCategory {
-                    Text("• \(runCat.rawValue)")
+                if let runType = template.runType {
+                    Text("• \(runType.rawValue)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
-            if let note = template.note, !note.isEmpty {
-                Text(note)
+            if let description = template.description, !description.isEmpty {
+                Text(description)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }

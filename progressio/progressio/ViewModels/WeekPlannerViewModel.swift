@@ -76,6 +76,14 @@ final class WeekPlannerViewModel: ObservableObject {
         self.currentStartOfWeek = startDate
     }
 
+    func addEnduranceSession(template: EnduranceTemplate, on date: Date) {
+        guard let dayIndex = dayIndex(for: date) else { return }
+        weekPlan.days[dayIndex].workouts.append(
+            Workout.from(template: template, plannedDate: date)
+        )
+        persistWeek()
+    }
+
     func addStrengthSession(template: StrengthTemplate, on date: Date) {
         guard let dayIndex = dayIndex(for: date) else { return }
         weekPlan.days[dayIndex].workouts.append(

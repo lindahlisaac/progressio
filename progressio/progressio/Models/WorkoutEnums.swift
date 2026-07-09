@@ -97,6 +97,7 @@ extension RunType {
         case .tempo: self = .tempo
         case .threshold: self = .threshold
         case .vo2: self = .vo2
+        case .longRun: self = .longRun
         case .race: self = .race
         }
     }
@@ -108,7 +109,7 @@ extension RunType {
         case .tempo: return .tempo
         case .threshold: return .threshold
         case .vo2: return .vo2
-        case .longRun: return nil
+        case .longRun: return .longRun
         case .race: return .race
         }
     }
@@ -122,8 +123,8 @@ extension RunCategory {
         case .tempo: self = .tempo
         case .threshold: self = .threshold
         case .vo2: self = .vo2
+        case .longRun: self = .longRun
         case .race: self = .race
-        case .longRun: return nil
         }
     }
 }

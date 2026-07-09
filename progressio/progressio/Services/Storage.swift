@@ -26,6 +26,11 @@ protocol TemplateStore {
     func save(_ templates: [StrengthTemplate])
 }
 
+protocol EnduranceTemplateStore {
+    func loadTemplates() -> [EnduranceTemplate]?
+    func save(_ templates: [EnduranceTemplate])
+}
+
 protocol WeekPlanStore {
     func loadWeek(start: Date) -> WeekPlan?
     func save(_ week: WeekPlan, start: Date)
@@ -62,6 +67,28 @@ struct FileTemplateStore: TemplateStore {
             try TemplatePersistence.saveTemplates(templates, to: url)
         } catch {
             print("Failed to persist templates: \(error)")
+        }
+    }
+}
+
+struct FileEnduranceTemplateStore: EnduranceTemplateStore {
+    private let url = StoragePaths.file("enduranceTemplates.json")
+
+    func loadTemplates() -> [EnduranceTemplate]? {
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        do {
+            return try EnduranceTemplatePersistence.load(from: url)
+        } catch {
+            print("Failed to load endurance templates: \(error)")
+            return nil
+        }
+    }
+
+    func save(_ templates: [EnduranceTemplate]) {
+        do {
+            try EnduranceTemplatePersistence.save(templates, to: url)
+        } catch {
+            print("Failed to persist endurance templates: \(error)")
         }
     }
 }

@@ -3,6 +3,7 @@ import Foundation
 /// Reads current on-disk legacy JSON shapes without modifying files.
 enum LegacyDataDecoder {
   static let templatesFileName = "templates.json"
+  static let enduranceTemplatesFileName = "enduranceTemplates.json"
   static let weeklyTemplatesFileName = "weeklyTemplates.json"
   static let unattachedRunsFileName = "unattachedRuns.json"
   static let weekPlanPrefix = "weekplan-"
@@ -10,6 +11,10 @@ enum LegacyDataDecoder {
 
   static func templatesURL() -> URL {
     StoragePaths.file(templatesFileName)
+  }
+
+  static func enduranceTemplatesURL() -> URL {
+    StoragePaths.file(enduranceTemplatesFileName)
   }
 
   static func weeklyTemplatesURL() -> URL {

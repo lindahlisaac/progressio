@@ -34,14 +34,31 @@ enum PlanStatus: String, CaseIterable, Codable {
 
 enum TemplateCategory: String, CaseIterable, Identifiable, Codable {
     case strength = "Strength"
-    case run = "Run"
+    case endurance = "Endurance"
 
     var id: String { rawValue }
 
     var systemImage: String {
         switch self {
         case .strength: return "dumbbell"
-        case .run: return "figure.run"
+        case .endurance: return "figure.run"
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        switch raw {
+        case Self.strength.rawValue:
+            self = .strength
+        case Self.endurance.rawValue, "Run":
+            // Legacy templates stored non-strength as "Run".
+            self = .endurance
+        default:
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Unknown TemplateCategory: \(raw)"
+            )
         }
     }
 }
@@ -52,6 +69,7 @@ enum RunCategory: String, CaseIterable, Codable, Identifiable {
     case tempo = "Tempo"
     case threshold = "Threshold"
     case vo2 = "VO2"
+    case longRun = "Long Run"
     case race = "Race"
 
     var id: String { rawValue }

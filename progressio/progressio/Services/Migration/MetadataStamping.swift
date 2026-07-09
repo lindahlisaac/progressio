@@ -17,6 +17,19 @@ enum MetadataStamping {
     }
 
     static func stamp(
+        _ template: inout EnduranceTemplate,
+        fallbackTimestamp: Date = Date()
+    ) {
+        if template.schemaVersion < WorkoutSchema.currentVersion {
+            template.schemaVersion = WorkoutSchema.currentVersion
+        }
+        if template.createdAt == nil {
+            template.createdAt = template.updatedAt ?? fallbackTimestamp
+        }
+        template.updatedAt = template.updatedAt ?? fallbackTimestamp
+    }
+
+    static func stamp(
         _ template: inout WeeklyTemplate,
         fallbackTimestamp: Date = Date()
     ) {

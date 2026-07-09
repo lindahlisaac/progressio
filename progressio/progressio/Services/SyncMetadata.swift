@@ -11,6 +11,14 @@ enum SyncMetadata {
         return copy
     }
 
+    static func softDelete(_ template: EnduranceTemplate, at date: Date = Date()) -> EnduranceTemplate {
+        var copy = template
+        copy.isDeleted = true
+        copy.deletedAt = date
+        copy.updatedAt = date
+        return copy
+    }
+
     static func softDelete(_ template: WeeklyTemplate, at date: Date = Date()) -> WeeklyTemplate {
         var copy = template
         copy.isDeleted = true
@@ -28,6 +36,16 @@ enum SyncMetadata {
     }
 
     static func stampNewRecord(_ template: inout StrengthTemplate, at date: Date = Date()) {
+        if template.createdAt == nil {
+            template.createdAt = date
+        }
+        template.updatedAt = date
+        if template.schemaVersion < WorkoutSchema.currentVersion {
+            template.schemaVersion = WorkoutSchema.currentVersion
+        }
+    }
+
+    static func stampNewRecord(_ template: inout EnduranceTemplate, at date: Date = Date()) {
         if template.createdAt == nil {
             template.createdAt = date
         }
@@ -58,6 +76,10 @@ enum SyncMetadata {
     }
 
     static func stampSave(_ template: inout StrengthTemplate, at date: Date = Date()) {
+        template.updatedAt = date
+    }
+
+    static func stampSave(_ template: inout EnduranceTemplate, at date: Date = Date()) {
         template.updatedAt = date
     }
 
