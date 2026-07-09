@@ -62,6 +62,6 @@ enum SyncRecordMerge {
             return remoteDeleted ? remote : local
         }
 
-        return localDeleted ? local : remote
+        return local
     }
 }
