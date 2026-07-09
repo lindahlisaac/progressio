@@ -7,20 +7,32 @@ struct MigratedWeekPlan: Codable, Equatable {
     var formatVersion: Int
     let startOfWeek: Date
     var days: [MigratedDayPlan]
+    var schemaVersion: Int
+    var createdAt: Date?
     var updatedAt: Date?
+    var isDeleted: Bool
+    var deletedAt: Date?
     var etag: String?
 
     init(
         formatVersion: Int = MigratedWeekPlan.formatVersion,
         startOfWeek: Date,
         days: [MigratedDayPlan],
+        schemaVersion: Int = WorkoutSchema.currentVersion,
+        createdAt: Date? = nil,
         updatedAt: Date? = nil,
+        isDeleted: Bool = false,
+        deletedAt: Date? = nil,
         etag: String? = nil
     ) {
         self.formatVersion = formatVersion
         self.startOfWeek = startOfWeek
         self.days = days
+        self.schemaVersion = schemaVersion
+        self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.isDeleted = isDeleted
+        self.deletedAt = deletedAt
         self.etag = etag
     }
 
@@ -29,7 +41,11 @@ struct MigratedWeekPlan: Codable, Equatable {
         formatVersion = try container.decodeIfPresent(Int.self, forKey: .formatVersion) ?? MigratedWeekPlan.formatVersion
         startOfWeek = try container.decode(Date.self, forKey: .startOfWeek)
         days = try container.decode([MigratedDayPlan].self, forKey: .days)
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? WorkoutSchema.currentVersion
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? updatedAt
+        isDeleted = try container.decodeIfPresent(Bool.self, forKey: .isDeleted) ?? false
+        deletedAt = try container.decodeIfPresent(Date.self, forKey: .deletedAt)
         etag = try container.decodeIfPresent(String.self, forKey: .etag)
     }
 }

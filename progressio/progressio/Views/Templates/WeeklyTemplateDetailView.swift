@@ -181,7 +181,7 @@ struct WeeklyTemplateDetailView: View {
     
     private var templatePickerList: some View {
         List {
-            ForEach(templatesViewModel.templates) { template in
+            ForEach(templatesViewModel.activeTemplates) { template in
                 Button {
                     addTemplateToEditDraft(template)
                 } label: {
@@ -249,12 +249,12 @@ struct WeeklyTemplateDetailView: View {
         guard !trimmedName.isEmpty else { return }
         
         // Update the template in the weekViewModel
-        if let index = weekViewModel.weeklyTemplates.firstIndex(where: { $0.id == template.id }) {
-            weekViewModel.weeklyTemplates[index].name = trimmedName
-            weekViewModel.weeklyTemplates[index].note = editNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editNote
-            weekViewModel.weeklyTemplates[index].days = editDraftDays
-            weekViewModel.persistWeeklyTemplates()
-        }
+        weekViewModel.updateWeeklyTemplate(
+            id: template.id,
+            name: trimmedName,
+            note: editNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editNote,
+            days: editDraftDays
+        )
         
         showingEdit = false
     }

@@ -192,8 +192,44 @@ struct DayPlan: Identifiable, Codable {
 struct WeekPlan: Codable {
     let startOfWeek: Date
     var days: [DayPlan]
+    var schemaVersion: Int
+    var createdAt: Date?
     var updatedAt: Date?
+    var isDeleted: Bool
+    var deletedAt: Date?
     var etag: String?
+
+    init(
+        startOfWeek: Date,
+        days: [DayPlan],
+        schemaVersion: Int = WorkoutSchema.currentVersion,
+        createdAt: Date? = Date(),
+        updatedAt: Date? = Date(),
+        isDeleted: Bool = false,
+        deletedAt: Date? = nil,
+        etag: String? = nil
+    ) {
+        self.startOfWeek = startOfWeek
+        self.days = days
+        self.schemaVersion = schemaVersion
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.isDeleted = isDeleted
+        self.deletedAt = deletedAt
+        self.etag = etag
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        startOfWeek = try container.decode(Date.self, forKey: .startOfWeek)
+        days = try container.decode([DayPlan].self, forKey: .days)
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? WorkoutSchema.currentVersion
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? updatedAt
+        isDeleted = try container.decodeIfPresent(Bool.self, forKey: .isDeleted) ?? false
+        deletedAt = try container.decodeIfPresent(Date.self, forKey: .deletedAt)
+        etag = try container.decodeIfPresent(String.self, forKey: .etag)
+    }
 }
 
 struct WeeklyTemplate: Identifiable, Codable {
@@ -390,16 +426,49 @@ struct UnattachedRun: Identifiable, Codable, Equatable {
     var detail: RunDetailData
     var date: Date
     var source: String?
+    var schemaVersion: Int
+    var createdAt: Date?
     var updatedAt: Date?
+    var isDeleted: Bool
+    var deletedAt: Date?
     var etag: String?
 
-    init(id: UUID = UUID(), detail: RunDetailData, date: Date, source: String? = nil, updatedAt: Date? = Date(), etag: String? = nil) {
+    init(
+        id: UUID = UUID(),
+        detail: RunDetailData,
+        date: Date,
+        source: String? = nil,
+        schemaVersion: Int = WorkoutSchema.currentVersion,
+        createdAt: Date? = Date(),
+        updatedAt: Date? = Date(),
+        isDeleted: Bool = false,
+        deletedAt: Date? = nil,
+        etag: String? = nil
+    ) {
         self.id = id
         self.detail = detail
         self.date = date
         self.source = source
+        self.schemaVersion = schemaVersion
+        self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.isDeleted = isDeleted
+        self.deletedAt = deletedAt
         self.etag = etag
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        detail = try container.decode(RunDetailData.self, forKey: .detail)
+        date = try container.decode(Date.self, forKey: .date)
+        source = try container.decodeIfPresent(String.self, forKey: .source)
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? WorkoutSchema.currentVersion
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? updatedAt
+        isDeleted = try container.decodeIfPresent(Bool.self, forKey: .isDeleted) ?? false
+        deletedAt = try container.decodeIfPresent(Date.self, forKey: .deletedAt)
+        etag = try container.decodeIfPresent(String.self, forKey: .etag)
     }
 }
 

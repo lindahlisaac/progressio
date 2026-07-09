@@ -58,7 +58,7 @@ The original roadmap assumed a greenfield data model refactor. The audit found:
 | 003 | `003-MigrationInfrastructure.md` | **Complete** |
 | 004 | `004-MigrateWeekPlansAndWorkouts.md` | **Complete** |
 | 005 | `005-MigrateTemplatesAndStrengthLogs.md` | **Complete** |
-| 006 | `006-SyncMetadataAndSoftDeletes.md` | Pending |
+| 006 | `006-SyncMetadataAndSoftDeletes.md` | Complete |
 | 007 | `007-WireViewModelsToWorkoutModel.md` | Pending |
 | 008 | `008-TemplateSnapshotOnApply.md` | Pending |
 | 009 | `009-EnduranceTemplateModelSplit.md` | Pending |

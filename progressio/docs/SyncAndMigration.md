@@ -66,6 +66,8 @@ The sync layer should be able to propagate deletions safely.
 
 When multiple devices modify data, updatedAt should help determine which record is newer.
 
+Soft-deleted records (tombstones) remain in sync payloads. When one copy is deleted and the other is not, the record with the newer `updatedAt` wins unless that would resurrect a deleted record — tombstones block resurrection without an explicit undelete.
+
 The app should avoid data loss wherever possible.
 
 For workouts with both planned and completed values, conflict resolution should avoid overwriting one side of the data accidentally.

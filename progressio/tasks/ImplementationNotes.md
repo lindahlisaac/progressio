@@ -306,12 +306,22 @@ Aligned with `tasks/README.md` ordering:
 - **Migration helpers**: `MetadataStamping`, `TemplatePersistence`, `StrengthLogPersistence`, `TemplateAndStrengthLogMigration`.
 - **On launch (v3 step)**: backs up and stamps `templates.json`, `weeklyTemplates.json`, `strengthlog-*.json`; optionally embeds strength log snapshots into matching `Workout.completedValues` in migrated week plans (by session UUID).
 - **Stores / UI**: `FileTemplateStore` / `FileWeeklyTemplateStore` use `TemplatePersistence`; `StrengthLogView` uses `StrengthLogPersistence`.
-- **Still legacy**: weekly template days embed `[PlannedSession]` (snapshot fix is Task 010); strength logs remain local files (CloudKit sync is Task 021); soft-delete behavior in stores is Task 006.
+- **Still legacy**: weekly template days embed `[PlannedSession]` (snapshot fix is Task 010); strength logs remain local files (CloudKit sync is Task 021).
 
-### Next up — Task 006
+### Task 006 — Sync Metadata and Soft Deletes
 
-- Wire soft deletes and full sync metadata through `SyncingStores` / CloudKit for all entity types.
-- Template models already carry metadata fields from Task 005.
+- **`SyncMetadata`** — `softDelete`, `stampNewRecord`, `stampSave`, `stampLegacy` for templates, weekly templates, unattached runs, week plans.
+- **`SyncRecordMerge`** — per-ID merge for template collections; tombstone-aware `pick` for week-plan envelope conflicts.
+- **`SyncingStores`** — all four syncing wrappers merge with `SyncRecordMerge`; tombstoned records stay in saved payloads for propagation.
+- **View models** — `deleteTemplate`, `deleteWeeklyTemplate`, `removeUnattachedRun`, `clearUnattachedRuns` soft-delete; `activeTemplates` / `activeWeeklyTemplates` / `activeUnattachedRuns` filter UI.
+- **Models** — `WeekPlan`, `MigratedWeekPlan`, `UnattachedRun` gained sync metadata; `WeekPlanMapper` / `WeekPlanPersistence` pass through `isDeleted` / `schemaVersion`.
+- **Docs** — `SyncAndMigration.md` updated with tombstone merge policy.
+- **Follow-up fix** — `SyncRecordMerge.pick` corrected so newer active records win over older tombstones; resurrection still blocked when active is newer than an existing tombstone (`SyncRecordMergeTests`).
+- **Known gaps (acceptable for 006)**: planner `removeSession` still hard-deletes sessions (workout-level soft delete is Task 007+); CloudKit orphan record cleanup deferred; strength logs still local-only (Task 021).
+
+### Next up — Task 007
+
+- Wire view models and planner views from `PlannedSession` to `Workout`; filter soft-deleted workouts in UI.
 
 ---
 
@@ -391,4 +401,4 @@ progressio/progressio/
 
 ---
 
-*Last updated: Task 005 complete.*
+*Last updated: Task 006 complete.*

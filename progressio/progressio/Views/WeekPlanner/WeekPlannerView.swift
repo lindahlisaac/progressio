@@ -26,7 +26,7 @@ struct WeekPlannerView: View {
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarLeading) {
                 Button {
-                    viewModel.goToPreviousWeek(templates: templatesViewModel.templates)
+                    viewModel.goToPreviousWeek(templates: templatesViewModel.activeTemplates)
                 } label: {
                     Image(systemName: "chevron.left")
                 }
@@ -37,10 +37,10 @@ struct WeekPlannerView: View {
                 } label: {
                     Image(systemName: "calendar.badge.plus")
                 }
-                .disabled(viewModel.weeklyTemplates.isEmpty)
+                .disabled(viewModel.activeWeeklyTemplates.isEmpty)
                 
                 Button {
-                    viewModel.goToNextWeek(templates: templatesViewModel.templates)
+                    viewModel.goToNextWeek(templates: templatesViewModel.activeTemplates)
                 } label: {
                     Image(systemName: "chevron.right")
                 }
@@ -50,7 +50,7 @@ struct WeekPlannerView: View {
             viewModel.dedupeUnattachedRuns()
             startHealthKitObserverIfNeeded()
         }
-        .onChange(of: viewModel.unattachedRuns.count) { newCount in
+        .onChange(of: viewModel.activeUnattachedRuns.count) { newCount in
             if newCount > previousUnattachedCount {
                 showingUnattachedSheet = true
             }
@@ -59,7 +59,7 @@ struct WeekPlannerView: View {
         .sheet(isPresented: $showingTemplatePicker) {
             NavigationStack {
                 List {
-                    ForEach(templatesViewModel.templates) { template in
+                    ForEach(templatesViewModel.activeTemplates) { template in
                         Button {
                             if let date = templatePickerDate {
                                 viewModel.addTemplateSession(template: template, on: date)
@@ -91,7 +91,7 @@ struct WeekPlannerView: View {
         .sheet(isPresented: $showingUnattachedSheet) {
             NavigationStack {
                 UnattachedRunsView(
-                    runs: viewModel.unattachedRuns,
+                    runs: viewModel.activeUnattachedRuns,
                     days: viewModel.weekPlan.days,
                     onAttach: { date, run, sessionID in
                         viewModel.attachActualRun(to: date, run: run, toSessionID: sessionID)
@@ -108,7 +108,7 @@ struct WeekPlannerView: View {
         .sheet(isPresented: $showingWeeklyTemplatePicker) {
             NavigationStack {
                 List {
-                    ForEach(viewModel.weeklyTemplates) { template in
+                    ForEach(viewModel.activeWeeklyTemplates) { template in
                         Button {
                             selectedWeeklyTemplate = template
                             showingWeeklyTemplatePicker = false
@@ -196,10 +196,10 @@ struct WeekPlannerView: View {
 
     private var unattachedRunsSection: some View {
         Group {
-            if !viewModel.unattachedRuns.isEmpty {
+            if !viewModel.activeUnattachedRuns.isEmpty {
                 NavigationLink {
                     UnattachedRunsView(
-                        runs: viewModel.unattachedRuns,
+                        runs: viewModel.activeUnattachedRuns,
                         days: viewModel.weekPlan.days,
                         onAttach: { date, run, sessionID in
                             viewModel.attachActualRun(to: date, run: run, toSessionID: sessionID)
@@ -214,7 +214,7 @@ struct WeekPlannerView: View {
                             Circle()
                                 .fill(Color.blue.opacity(0.15))
                                 .frame(width: 28, height: 28)
-                            Text("\(viewModel.unattachedRuns.count)")
+                            Text("\(viewModel.activeUnattachedRuns.count)")
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.blue)
                         }

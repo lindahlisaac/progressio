@@ -115,7 +115,12 @@ struct FileUnattachedRunStore: UnattachedRunStore {
             let data = try Data(contentsOf: url)
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
-            return try decoder.decode([UnattachedRun].self, from: data)
+            var runs = try decoder.decode([UnattachedRun].self, from: data)
+            let fallback = Date()
+            for index in runs.indices {
+                SyncMetadata.stampLegacy(&runs[index], fallbackTimestamp: fallback)
+            }
+            return runs
         } catch {
             print("Failed to load unattached runs: \(error)")
             return []

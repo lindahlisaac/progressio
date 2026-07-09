@@ -2,8 +2,12 @@ import Foundation
 import Combine
 
 final class TemplateLibraryViewModel: ObservableObject {
-    @Published var templates: [StrengthTemplate]
+    @Published private(set) var templates: [StrengthTemplate]
     private let store: TemplateStore
+
+    var activeTemplates: [StrengthTemplate] {
+        templates.filter { !$0.isDeleted }
+    }
 
     init(store: TemplateStore = SyncingTemplateStore(), templates: [StrengthTemplate]? = nil) {
         self.store = store
@@ -31,7 +35,7 @@ final class TemplateLibraryViewModel: ObservableObject {
         }
 
         var newTemplate = StrengthTemplate(name: trimmedName, category: category, exercises: exercises, note: cleanedNote, runCategory: runCategory)
-        newTemplate.updatedAt = Date()
+        SyncMetadata.stampNewRecord(&newTemplate)
         templates.append(newTemplate)
         persistTemplates()
     }
@@ -39,15 +43,22 @@ final class TemplateLibraryViewModel: ObservableObject {
     func updateTemplate(_ updated: StrengthTemplate) {
         if let idx = templates.firstIndex(where: { $0.id == updated.id }) {
             var stamped = updated
-            stamped.updatedAt = Date()
+            SyncMetadata.stampSave(&stamped)
             templates[idx] = stamped
             persistTemplates()
         }
     }
 
     func deleteTemplate(id: UUID) {
-        templates.removeAll { $0.id == id }
+        guard let idx = templates.firstIndex(where: { $0.id == id }) else { return }
+        templates[idx] = SyncMetadata.softDelete(templates[idx])
         persistTemplates()
+    }
+
+    func reloadFromStore() {
+        if let loaded = store.loadTemplates() {
+            templates = loaded
+        }
     }
 
     static func makeSamples() -> [StrengthTemplate] {

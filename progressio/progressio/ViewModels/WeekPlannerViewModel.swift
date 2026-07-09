@@ -16,8 +16,16 @@ final class WeekPlannerViewModel: ObservableObject {
 
     @Published var weekPlan: WeekPlan
     @Published var currentStartOfWeek: Date
-    @Published var unattachedRuns: [UnattachedRun] = []
-    @Published var weeklyTemplates: [WeeklyTemplate] = []
+    @Published private(set) var unattachedRuns: [UnattachedRun] = []
+    @Published private(set) var weeklyTemplates: [WeeklyTemplate] = []
+
+    var activeWeeklyTemplates: [WeeklyTemplate] {
+        weeklyTemplates.filter { !$0.isDeleted }
+    }
+
+    var activeUnattachedRuns: [UnattachedRun] {
+        unattachedRuns.filter { !$0.isDeleted }
+    }
 
     init(calendar: Calendar = .current,
          templates: [StrengthTemplate],
@@ -165,6 +173,21 @@ final class WeekPlannerViewModel: ObservableObject {
         let template = WeeklyTemplate(name: name, note: note, days: dayTemplates)
         weeklyTemplates.append(template)
         print("✅ Saved weekly template: \(name), total templates: \(weeklyTemplates.count)")
+        persistWeeklyTemplates()
+    }
+
+    func deleteWeeklyTemplate(id: UUID) {
+        guard let idx = weeklyTemplates.firstIndex(where: { $0.id == id }) else { return }
+        weeklyTemplates[idx] = SyncMetadata.softDelete(weeklyTemplates[idx])
+        persistWeeklyTemplates()
+    }
+
+    func updateWeeklyTemplate(id: UUID, name: String, note: String?, days: [DayTemplate]) {
+        guard let idx = weeklyTemplates.firstIndex(where: { $0.id == id }) else { return }
+        weeklyTemplates[idx].name = name
+        weeklyTemplates[idx].note = note
+        weeklyTemplates[idx].days = days
+        SyncMetadata.stampSave(&weeklyTemplates[idx])
         persistWeeklyTemplates()
     }
 
@@ -350,7 +373,9 @@ final class WeekPlannerViewModel: ObservableObject {
         for run in runs {
             let sig = runSignature(for: run)
             if sigs.insert(sig).inserted {
-                unattachedRuns.append(run)
+                var stamped = run
+                SyncMetadata.stampNewRecord(&stamped)
+                unattachedRuns.append(stamped)
                 added = true
             }
         }
@@ -361,12 +386,21 @@ final class WeekPlannerViewModel: ObservableObject {
     }
 
     func removeUnattachedRun(id: UUID) {
-        unattachedRuns.removeAll { $0.id == id }
+        guard let idx = unattachedRuns.firstIndex(where: { $0.id == id }) else { return }
+        unattachedRuns[idx] = SyncMetadata.softDelete(unattachedRuns[idx])
         persistUnattached()
     }
 
     func clearUnattachedRuns() {
-        unattachedRuns.removeAll()
+        let now = Date()
+        unattachedRuns = unattachedRuns.map { run in
+            guard !run.isDeleted else { return run }
+            var copy = run
+            copy.isDeleted = true
+            copy.deletedAt = now
+            copy.updatedAt = now
+            return copy
+        }
         persistUnattached()
     }
 
@@ -374,6 +408,10 @@ final class WeekPlannerViewModel: ObservableObject {
         var seen = Set<String>()
         var unique: [UnattachedRun] = []
         for run in unattachedRuns {
+            guard !run.isDeleted else {
+                unique.append(run)
+                continue
+            }
             let sig = runSignature(for: run)
             if seen.insert(sig).inserted {
                 unique.append(run)
@@ -388,7 +426,7 @@ final class WeekPlannerViewModel: ObservableObject {
     private func persistUnattached() {
         unattachedRuns = unattachedRuns.map { run in
             var stamped = run
-            stamped.updatedAt = Date()
+            SyncMetadata.stampSave(&stamped)
             return stamped
         }
         unattachedStore.save(unattachedRuns)
@@ -397,7 +435,7 @@ final class WeekPlannerViewModel: ObservableObject {
     func persistWeeklyTemplates() {
         weeklyTemplates = weeklyTemplates.map { template in
             var stamped = template
-            stamped.updatedAt = Date()
+            SyncMetadata.stampSave(&stamped)
             return stamped
         }
         weeklyTemplateStore.save(weeklyTemplates)
@@ -449,7 +487,7 @@ final class WeekPlannerViewModel: ObservableObject {
 
     private func existingRunSignatures() -> Set<String> {
         var sigs = Set<String>()
-        for unattached in unattachedRuns {
+        for unattached in unattachedRuns where !unattached.isDeleted {
             sigs.insert(runSignature(for: unattached))
         }
         for day in weekPlan.days {

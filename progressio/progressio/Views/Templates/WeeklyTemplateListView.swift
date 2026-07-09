@@ -8,7 +8,7 @@ struct WeeklyTemplateListView: View {
 
     var body: some View {
         List {
-            if weekViewModel.weeklyTemplates.isEmpty {
+            if weekViewModel.activeWeeklyTemplates.isEmpty {
                 if showEmptyPrompt {
                     Text("No weekly templates yet. Tap + to create one.")
                         .font(.footnote)
@@ -17,7 +17,7 @@ struct WeeklyTemplateListView: View {
                 }
             } else {
                 Section {
-                    ForEach(weekViewModel.weeklyTemplates) { template in
+                    ForEach(weekViewModel.activeWeeklyTemplates) { template in
                         VStack(alignment: .leading, spacing: 4) {
                             Text(template.name)
                                 .font(.headline)
@@ -41,8 +41,7 @@ struct WeeklyTemplateListView: View {
                         }
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) {
-                                weekViewModel.weeklyTemplates.removeAll { $0.id == template.id }
-                                weekViewModel.persistWeeklyTemplates()
+                                weekViewModel.deleteWeeklyTemplate(id: template.id)
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }

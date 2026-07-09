@@ -36,7 +36,7 @@ struct TemplateLibraryView: View {
 
             if selection == .workout {
                 Section("Strength") {
-                    ForEach(viewModel.templates.filter { $0.category == .strength }) { template in
+                    ForEach(viewModel.activeTemplates.filter { $0.category == .strength }) { template in
                         NavigationLink {
                             TemplateDetailView(template: template, viewModel: viewModel)
                         } label: {
@@ -65,7 +65,7 @@ struct TemplateLibraryView: View {
                 }
 
                 Section("Run") {
-                    ForEach(viewModel.templates.filter { $0.category == .run }) { template in
+                    ForEach(viewModel.activeTemplates.filter { $0.category == .run }) { template in
                         NavigationLink {
                             TemplateDetailView(template: template, viewModel: viewModel)
                         } label: {
@@ -93,14 +93,14 @@ struct TemplateLibraryView: View {
                     }
                 }
             } else {
-                if weekViewModel.weeklyTemplates.isEmpty {
+                if weekViewModel.activeWeeklyTemplates.isEmpty {
                     Text("No weekly templates yet. Tap + to create one.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 8)
                 } else {
                     Section {
-                        ForEach(weekViewModel.weeklyTemplates) { template in
+                        ForEach(weekViewModel.activeWeeklyTemplates) { template in
                             NavigationLink {
                                 WeeklyTemplateDetailView(
                                     template: template,
@@ -132,8 +132,7 @@ struct TemplateLibraryView: View {
                             }
                             .swipeActions(edge: .trailing) {
                                 Button(role: .destructive) {
-                                    weekViewModel.weeklyTemplates.removeAll { $0.id == template.id }
-                                    weekViewModel.persistWeeklyTemplates()
+                                    weekViewModel.deleteWeeklyTemplate(id: template.id)
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
@@ -447,7 +446,7 @@ struct TemplateLibraryView: View {
     
     private var templatePickerList: some View {
         List {
-            ForEach(viewModel.templates) { template in
+            ForEach(viewModel.activeTemplates) { template in
                 Button {
                     addTemplateToWeeklyDraft(template)
                 } label: {

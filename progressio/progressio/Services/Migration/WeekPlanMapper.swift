@@ -20,7 +20,11 @@ enum WeekPlanMapper {
         return MigratedWeekPlan(
             startOfWeek: legacy.startOfWeek,
             days: days,
+            schemaVersion: legacy.schemaVersion,
+            createdAt: legacy.createdAt,
             updatedAt: legacy.updatedAt,
+            isDeleted: legacy.isDeleted,
+            deletedAt: legacy.deletedAt,
             etag: legacy.etag
         )
     }
@@ -39,7 +43,11 @@ enum WeekPlanMapper {
         return WeekPlan(
             startOfWeek: migrated.startOfWeek,
             days: days,
+            schemaVersion: migrated.schemaVersion,
+            createdAt: migrated.createdAt,
             updatedAt: migrated.updatedAt,
+            isDeleted: migrated.isDeleted,
+            deletedAt: migrated.deletedAt,
             etag: migrated.etag
         )
     }

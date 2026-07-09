@@ -2,6 +2,7 @@ import Foundation
 
 // Simple last-writer-wins syncing stores that wrap local file cache + CloudKit.
 // Assumes cloud errors are non-fatal; will keep local cache and try to push best-effort.
+// Soft-deleted records remain in payloads so tombstones propagate across devices.
 
 struct SyncingTemplateStore: TemplateStore {
     private let local: TemplateStore
@@ -15,34 +16,25 @@ struct SyncingTemplateStore: TemplateStore {
     func loadTemplates() -> [StrengthTemplate]? {
         let localTemplates = local.loadTemplates() ?? []
         let cloudTemplates = cloud.loadTemplates() ?? []
-        let merged = mergeTemplates(local: localTemplates, remote: cloudTemplates)
+        let merged = SyncRecordMerge.mergeByID(
+            local: localTemplates,
+            remote: cloudTemplates,
+            id: \.id,
+            updatedAt: \.updatedAt,
+            isDeleted: \.isDeleted
+        )
         local.save(merged)
         return merged
     }
 
     func save(_ templates: [StrengthTemplate]) {
-        let stamped = templates.map { t -> StrengthTemplate in
-            var copy = t
-            copy.updatedAt = Date()
+        let stamped = templates.map { template -> StrengthTemplate in
+            var copy = template
+            SyncMetadata.stampSave(&copy)
             return copy
         }
         local.save(stamped)
         cloud.save(stamped)
-    }
-
-    private func mergeTemplates(local: [StrengthTemplate], remote: [StrengthTemplate]) -> [StrengthTemplate] {
-        var merged: [UUID: StrengthTemplate] = [:]
-        for t in local { merged[t.id] = t }
-        for r in remote {
-            if let existing = merged[r.id] {
-                let localDate = existing.updatedAt ?? .distantPast
-                let remoteDate = r.updatedAt ?? .distantPast
-                merged[r.id] = remoteDate >= localDate ? r : existing
-            } else {
-                merged[r.id] = r
-            }
-        }
-        return Array(merged.values)
     }
 }
 
@@ -58,34 +50,25 @@ struct SyncingWeeklyTemplateStore: WeeklyTemplateStore {
     func loadTemplates() -> [WeeklyTemplate] {
         let localTemplates = local.loadTemplates()
         let cloudTemplates = cloud.loadTemplates()
-        let merged = merge(local: localTemplates, remote: cloudTemplates)
+        let merged = SyncRecordMerge.mergeByID(
+            local: localTemplates,
+            remote: cloudTemplates,
+            id: \.id,
+            updatedAt: \.updatedAt,
+            isDeleted: \.isDeleted
+        )
         local.save(merged)
         return merged
     }
 
     func save(_ templates: [WeeklyTemplate]) {
-        let stamped = templates.map { t -> WeeklyTemplate in
-            var copy = t
-            copy.updatedAt = Date()
+        let stamped = templates.map { template -> WeeklyTemplate in
+            var copy = template
+            SyncMetadata.stampSave(&copy)
             return copy
         }
         local.save(stamped)
         cloud.save(stamped)
-    }
-
-    private func merge(local: [WeeklyTemplate], remote: [WeeklyTemplate]) -> [WeeklyTemplate] {
-        var merged: [UUID: WeeklyTemplate] = [:]
-        for t in local { merged[t.id] = t }
-        for r in remote {
-            if let existing = merged[r.id] {
-                let localDate = existing.updatedAt ?? .distantPast
-                let remoteDate = r.updatedAt ?? .distantPast
-                merged[r.id] = remoteDate >= localDate ? r : existing
-            } else {
-                merged[r.id] = r
-            }
-        }
-        return Array(merged.values)
     }
 }
 
@@ -101,34 +84,25 @@ struct SyncingUnattachedRunStore: UnattachedRunStore {
     func loadRuns() -> [UnattachedRun] {
         let localRuns = local.loadRuns()
         let cloudRuns = cloud.loadRuns()
-        let merged = merge(local: localRuns, remote: cloudRuns)
+        let merged = SyncRecordMerge.mergeByID(
+            local: localRuns,
+            remote: cloudRuns,
+            id: \.id,
+            updatedAt: \.updatedAt,
+            isDeleted: \.isDeleted
+        )
         local.save(merged)
         return merged
     }
 
     func save(_ runs: [UnattachedRun]) {
-        let stamped = runs.map { r -> UnattachedRun in
-            var copy = r
-            copy.updatedAt = Date()
+        let stamped = runs.map { run -> UnattachedRun in
+            var copy = run
+            SyncMetadata.stampSave(&copy)
             return copy
         }
         local.save(stamped)
         cloud.save(stamped)
-    }
-
-    private func merge(local: [UnattachedRun], remote: [UnattachedRun]) -> [UnattachedRun] {
-        var merged: [UUID: UnattachedRun] = [:]
-        for r in local { merged[r.id] = r }
-        for r in remote {
-            if let existing = merged[r.id] {
-                let localDate = existing.updatedAt ?? .distantPast
-                let remoteDate = r.updatedAt ?? .distantPast
-                merged[r.id] = remoteDate >= localDate ? r : existing
-            } else {
-                merged[r.id] = r
-            }
-        }
-        return Array(merged.values)
     }
 }
 
@@ -151,7 +125,7 @@ struct SyncingWeekPlanStore: WeekPlanStore {
 
     func save(_ week: WeekPlan, start: Date) {
         var stamped = week
-        stamped.updatedAt = Date()
+        SyncMetadata.stampSave(&stamped)
         local.save(stamped, start: start)
         cloud.save(stamped, start: start)
     }
@@ -161,21 +135,20 @@ struct SyncingWeekPlanStore: WeekPlanStore {
     }
 
     private func merge(local: WeekPlan?, remote: WeekPlan?) -> WeekPlan? {
-        // Last-writer-wins on the week envelope `updatedAt`. Each store dual-reads legacy or
-        // migrated CloudKit payloads and returns a legacy `WeekPlan` for the view models.
-        // Newer local migrated data is not overwritten by an older remote blob when `updatedAt`
-        // on the local week is newer (Task 004).
         switch (local, remote) {
         case (nil, nil):
             return nil
-        case let (l?, nil):
-            return l
-        case let (nil, r?):
-            return r
-        case let (l?, r?):
-            let lDate = l.updatedAt ?? .distantPast
-            let rDate = r.updatedAt ?? .distantPast
-            return rDate >= lDate ? r : l
+        case let (localWeek?, nil):
+            return localWeek
+        case let (nil, remoteWeek?):
+            return remoteWeek
+        case let (localWeek?, remoteWeek?):
+            return SyncRecordMerge.pick(
+                local: localWeek,
+                remote: remoteWeek,
+                updatedAt: \.updatedAt,
+                isDeleted: \.isDeleted
+            )
         }
     }
 }

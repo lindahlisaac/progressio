@@ -13,12 +13,16 @@ enum WeekPlanPersistence {
     static func decode(_ data: Data, fileModificationDate: Date? = nil) throws -> MigratedWeekPlan {
         if jsonLooksLikeMigratedWeekPlan(data) {
             let decoder = jsonDecoder()
-            return try decoder.decode(MigratedWeekPlan.self, from: data)
+            var plan = try decoder.decode(MigratedWeekPlan.self, from: data)
+            SyncMetadata.stampLegacy(&plan, fallbackTimestamp: fileModificationDate ?? Date())
+            return plan
         }
 
         let decoder = jsonDecoder()
         let legacy = try decoder.decode(WeekPlan.self, from: data)
-        return WeekPlanMapper.migratedWeekPlan(from: legacy, fileModificationDate: fileModificationDate)
+        var migrated = WeekPlanMapper.migratedWeekPlan(from: legacy, fileModificationDate: fileModificationDate)
+        SyncMetadata.stampLegacy(&migrated, fallbackTimestamp: fileModificationDate ?? legacy.updatedAt ?? Date())
+        return migrated
     }
 
     static func write(_ plan: MigratedWeekPlan, to url: URL) throws {

@@ -74,9 +74,9 @@ struct SettingsView: View {
                 } label: {
                     Label("Clear imported runs", systemImage: "trash")
                 }
-                .disabled(weekViewModel.unattachedRuns.isEmpty)
-                if !weekViewModel.unattachedRuns.isEmpty {
-                    Text("Unattached runs: \(weekViewModel.unattachedRuns.count)")
+                .disabled(weekViewModel.activeUnattachedRuns.isEmpty)
+                if !weekViewModel.activeUnattachedRuns.isEmpty {
+                    Text("Unattached runs: \(weekViewModel.activeUnattachedRuns.count)")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
