@@ -1,8 +1,8 @@
 import SwiftUI
 
 struct RideDetailView: View {
-    let session: PlannedSession
-    var onSave: ((RunDetailData, PlanStatus, String?, String?, String?) -> Void)?
+    let workout: Workout
+    var onSave: ((String, RunCategory?, String, String, String, WorkoutStatus, String?, String?, String?) -> Void)?
 
     @State private var title: String
     @State private var plannedMiles: String
@@ -20,33 +20,32 @@ struct RideDetailView: View {
     @FocusState private var focusedField: Field?
     @Environment(\.dismiss) private var dismiss
 
-    init(session: PlannedSession, onSave: ((RunDetailData, PlanStatus, String?, String?, String?) -> Void)? = nil) {
-        self.session = session
+    init(
+        workout: Workout,
+        onSave: ((String, RunCategory?, String, String, String, WorkoutStatus, String?, String?, String?) -> Void)? = nil
+    ) {
+        self.workout = workout
         self.onSave = onSave
-        let detail = session.runDetail
-        let defaultTitle = "Ride"
-        _title = State(initialValue: (detail?.title ?? session.title).isEmpty ? defaultTitle : (detail?.title ?? session.title))
-        _plannedMiles = State(initialValue: detail?.distance ?? "")
-        _actualMiles = State(initialValue: session.actualRun?.distance ?? "")
-        _plannedElevation = State(initialValue: detail?.elevationGain ?? "")
-        _actualElevation = State(initialValue: session.actualRun?.elevationGain ?? "")
-        let plannedDuration = detail?.duration ?? ""
-        let (ph, pm, ps) = RideDetailView.split(duration: plannedDuration)
+        _title = State(initialValue: workout.title.isEmpty ? "Ride" : workout.title)
+        _plannedMiles = State(initialValue: workout.plannedDistance)
+        _actualMiles = State(initialValue: workout.actualDistance)
+        _plannedElevation = State(initialValue: workout.plannedElevation)
+        _actualElevation = State(initialValue: workout.actualElevation)
+        let (ph, pm, ps) = RideDetailView.split(duration: workout.plannedDuration)
         _plannedHours = State(initialValue: ph)
         _plannedMinutes = State(initialValue: pm)
         _plannedSeconds = State(initialValue: ps)
-        let actualDuration = session.actualRun?.duration ?? ""
-        let (ah, am, as_) = RideDetailView.split(duration: actualDuration)
+        let (ah, am, as_) = RideDetailView.split(duration: workout.actualDuration)
         _actualHours = State(initialValue: ah)
         _actualMinutes = State(initialValue: am)
         _actualSeconds = State(initialValue: as_)
         _effortUnit = State(initialValue: .miles)
-        _isCompleted = State(initialValue: session.status == .completed)
+        _isCompleted = State(initialValue: workout.status == .completed || workout.status == .partiallyCompleted)
     }
 
     var body: some View {
         Form {
-            if session.status == .skipped, let note = session.note, !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if workout.status == .skipped, let note = workout.skipReason, !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Section("Skip note") {
                     Text(note)
                         .foregroundStyle(.secondary)
@@ -190,35 +189,18 @@ struct RideDetailView: View {
         case actualElevation
     }
 
-    private func save(statusOverride: PlanStatus?, dismissAfter: Bool) {
-        let base = session.runDetail
-        let detail: RunDetailData
+    private func save(statusOverride: WorkoutStatus?, dismissAfter: Bool) {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let effectiveTitle = trimmedTitle.isEmpty ? "Ride" : trimmedTitle
 
+        let plannedDistance: String
+        let plannedDuration: String
         if effortUnit == .miles {
-            detail = RunDetailData(
-                title: effectiveTitle,
-                notes: base?.notes ?? "",
-                distance: plannedMiles,
-                duration: "",
-                averageHR: base?.averageHR ?? "",
-                category: base?.category,
-                hkWorkoutUUID: base?.hkWorkoutUUID,
-                elevationGain: plannedElevation
-            )
+            plannedDistance = plannedMiles
+            plannedDuration = ""
         } else {
-            let plannedDurationString = RideDetailView.durationString(h: plannedHours, m: plannedMinutes, s: plannedSeconds)
-            detail = RunDetailData(
-                title: effectiveTitle,
-                notes: base?.notes ?? "",
-                distance: "",
-                duration: plannedDurationString,
-                averageHR: base?.averageHR ?? "",
-                category: base?.category,
-                hkWorkoutUUID: base?.hkWorkoutUUID,
-                elevationGain: plannedElevation
-            )
+            plannedDistance = ""
+            plannedDuration = RideDetailView.durationString(h: plannedHours, m: plannedMinutes, s: plannedSeconds)
         }
 
         let actualDistanceClean = actualMiles.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -228,12 +210,20 @@ struct RideDetailView: View {
         let actualElevationClean = actualElevation.trimmingCharacters(in: .whitespacesAndNewlines)
         let actualElevationValue: String? = actualElevationClean.isEmpty ? nil : actualElevationClean
 
-        let status = statusOverride ?? (isCompleted ? .completed : .planned)
-        onSave?(detail, status, actualDistanceValue, actualDurationValue, actualElevationValue)
+        let status = statusOverride ?? (isCompleted ? WorkoutStatus.completed : .planned)
+        onSave?(
+            effectiveTitle,
+            nil,
+            plannedDistance,
+            plannedDuration,
+            plannedElevation,
+            status,
+            actualDistanceValue,
+            actualDurationValue,
+            actualElevationValue
+        )
         if dismissAfter {
             dismiss()
         }
     }
 }
-
-

@@ -1,7 +1,7 @@
 import Foundation
 
-/// Converts between legacy `PlannedSession` and target `Workout` models.
-/// Not used by stores or view models until Task 007.
+/// Converts between legacy `PlannedSession` and `Workout` models.
+/// Used at weekly-template boundaries and when importing legacy `sessions` JSON.
 ///
 /// **Known lossy round-trips** (legacy has no equivalent; safe until Task 007+):
 /// - `WorkoutStatus.partiallyCompleted` → `PlanStatus.completed` on reverse mapping

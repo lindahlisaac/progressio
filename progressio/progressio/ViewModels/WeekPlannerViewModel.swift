@@ -78,70 +78,36 @@ final class WeekPlannerViewModel: ObservableObject {
 
     func addStrengthSession(template: StrengthTemplate, on date: Date) {
         guard let dayIndex = dayIndex(for: date) else { return }
-        weekPlan.days[dayIndex].sessions.append(
-            PlannedSession(
-                title: template.name,
-                kind: template.category == .run ? .run : .strength,
-                status: .planned,
-                note: "From template",
-                templateName: template.name
-            )
+        weekPlan.days[dayIndex].workouts.append(
+            Workout.from(template: template, plannedDate: date)
         )
         persistWeek()
     }
 
     func addStrengthSession(on date: Date, title: String = "Strength", note: String? = nil) {
         guard let dayIndex = dayIndex(for: date) else { return }
-        weekPlan.days[dayIndex].sessions.append(
-            PlannedSession(
-                title: title,
-                kind: .strength,
-                status: .planned,
-                note: note,
-                templateName: nil
-            )
+        weekPlan.days[dayIndex].workouts.append(
+            Workout.strength(plannedDate: date, title: title, notes: note)
         )
         persistWeek()
     }
 
     func addTemplateSession(template: StrengthTemplate, on date: Date) {
         guard let dayIndex = dayIndex(for: date) else { return }
-        
-        let runDetail: RunDetailData?
-        if template.category == .run {
-            runDetail = RunDetailData(
-                title: template.name,
-                notes: template.note ?? "",
-                distance: "",
-                duration: "",
-                averageHR: "",
-                category: template.runCategory
-            )
-        } else {
-            runDetail = nil
-        }
-        
-        weekPlan.days[dayIndex].sessions.append(
-            PlannedSession(
-                title: template.name,
-                kind: template.category == .run ? .run : .strength,
-                status: .planned,
-                note: "From template",
-                templateName: template.name,
-                runDetail: runDetail
-            )
+        weekPlan.days[dayIndex].workouts.append(
+            Workout.from(template: template, plannedDate: date)
         )
         persistWeek()
     }
 
     func addRun(on date: Date, title: String = "Run", planned: Bool = true) {
         guard let dayIndex = dayIndex(for: date) else { return }
-        weekPlan.days[dayIndex].sessions.append(
-            PlannedSession(
+        weekPlan.days[dayIndex].workouts.append(
+            Workout.run(
+                plannedDate: date,
                 title: title,
-                kind: .run,
-                status: planned ? .planned : .unplanned,
-                note: planned ? "Attach the detected HealthKit run" : "Logged from detected run"
+                imported: !planned,
+                notes: planned ? "Attach the detected HealthKit run" : "Logged from detected run"
             )
         )
         persistWeek()
@@ -149,12 +115,12 @@ final class WeekPlannerViewModel: ObservableObject {
 
     func addCycle(on date: Date, title: String = "Ride", planned: Bool = true) {
         guard let dayIndex = dayIndex(for: date) else { return }
-        weekPlan.days[dayIndex].sessions.append(
-            PlannedSession(
+        weekPlan.days[dayIndex].workouts.append(
+            Workout.ride(
+                plannedDate: date,
                 title: title,
-                kind: .cycle,
-                status: planned ? .planned : .unplanned,
-                note: planned ? "Planned ride" : "Logged ride"
+                imported: !planned,
+                notes: planned ? "Planned ride" : "Logged ride"
             )
         )
         persistWeek()
@@ -167,7 +133,8 @@ final class WeekPlannerViewModel: ObservableObject {
         } else {
             dayTemplates = weekPlan.days.map { day in
                 let weekday = calendar.component(.weekday, from: day.date)
-                return DayTemplate(weekday: weekday, sessions: day.sessions)
+                let sessions = day.workouts.map { LegacySessionMapper.plannedSession(from: $0) }
+                return DayTemplate(weekday: weekday, sessions: sessions)
             }
         }
         let template = WeeklyTemplate(name: name, note: note, days: dayTemplates)
@@ -192,28 +159,25 @@ final class WeekPlannerViewModel: ObservableObject {
     }
 
     func hasWorkoutsInCurrentWeek() -> Bool {
-        return weekPlan.days.contains { !$0.sessions.isEmpty }
+        weekPlan.days.contains { !$0.workouts.isEmpty }
     }
-    
+
     func applyWeeklyTemplate(_ template: WeeklyTemplate, to start: Date, keepExisting: Bool = false) {
         var days: [DayPlan] = []
         for offset in 0..<7 {
             guard let date = calendar.date(byAdding: .day, value: offset, to: start) else { continue }
             let weekday = calendar.component(.weekday, from: date)
-            let templateSessions = template.days.first(where: { $0.weekday == weekday })?.sessions ?? []
-            
+            let templateWorkouts = (template.days.first(where: { $0.weekday == weekday })?.sessions ?? [])
+                .map { LegacySessionMapper.workout(from: $0, plannedDate: date) }
+
             if keepExisting {
-                // Find existing day and keep its sessions, then append template sessions
                 if let existingDay = weekPlan.days.first(where: { calendar.isDate($0.date, inSameDayAs: date) }) {
-                    var combinedSessions = existingDay.sessions
-                    combinedSessions.append(contentsOf: templateSessions)
-                    days.append(DayPlan(date: date, sessions: combinedSessions))
+                    days.append(DayPlan(date: date, workouts: existingDay.workouts + templateWorkouts))
                 } else {
-                    days.append(DayPlan(date: date, sessions: templateSessions))
+                    days.append(DayPlan(date: date, workouts: templateWorkouts))
                 }
             } else {
-                // Override with template sessions only
-                days.append(DayPlan(date: date, sessions: templateSessions))
+                days.append(DayPlan(date: date, workouts: templateWorkouts))
             }
         }
         weekPlan = WeekPlan(startOfWeek: start, days: days)
@@ -221,141 +185,123 @@ final class WeekPlannerViewModel: ObservableObject {
         persistWeek()
     }
 
-    func toggleStatus(sessionID: UUID) {
+    func toggleStatus(workoutID: UUID) {
         for dayIdx in weekPlan.days.indices {
-            if let sessionIndex = weekPlan.days[dayIdx].sessions.firstIndex(where: { $0.id == sessionID }) {
-                let status = weekPlan.days[dayIdx].sessions[sessionIndex].status
-                switch status {
-                case .unplanned:
-                    weekPlan.days[dayIdx].sessions[sessionIndex].status = .planned
+            if let workoutIndex = weekPlan.days[dayIdx].workouts.firstIndex(where: { $0.id == workoutID }) {
+                switch weekPlan.days[dayIdx].workouts[workoutIndex].status {
+                case .imported:
+                    weekPlan.days[dayIdx].workouts[workoutIndex].status = .planned
                 case .planned:
-                    weekPlan.days[dayIdx].sessions[sessionIndex].status = .completed
-                case .completed:
-                    weekPlan.days[dayIdx].sessions[sessionIndex].status = .planned
+                    weekPlan.days[dayIdx].workouts[workoutIndex].status = .completed
+                case .completed, .partiallyCompleted:
+                    weekPlan.days[dayIdx].workouts[workoutIndex].status = .planned
                 case .skipped:
-                    weekPlan.days[dayIdx].sessions[sessionIndex].status = .planned
+                    weekPlan.days[dayIdx].workouts[workoutIndex].status = .planned
                 }
+                weekPlan.days[dayIdx].workouts[workoutIndex].touchUpdatedAt()
                 persistWeek()
                 break
             }
         }
     }
 
-    func removeSession(dayID: UUID, sessionID: UUID) {
+    func removeWorkout(dayID: UUID, workoutID: UUID) {
         guard let dayIndex = weekPlan.days.firstIndex(where: { $0.id == dayID }) else { return }
-        weekPlan.days[dayIndex].sessions.removeAll { $0.id == sessionID }
+        weekPlan.days[dayIndex].workouts.removeAll { $0.id == workoutID }
         persistWeek()
     }
 
-    func setSessionStatus(sessionID: UUID, status: PlanStatus, note: String? = nil) {
+    func setWorkoutStatus(workoutID: UUID, status: WorkoutStatus, note: String? = nil) {
         for dayIdx in weekPlan.days.indices {
-            if let sessionIndex = weekPlan.days[dayIdx].sessions.firstIndex(where: { $0.id == sessionID }) {
-                weekPlan.days[dayIdx].sessions[sessionIndex].status = status
+            if let workoutIndex = weekPlan.days[dayIdx].workouts.firstIndex(where: { $0.id == workoutID }) {
+                weekPlan.days[dayIdx].workouts[workoutIndex].status = status
                 if let note {
                     let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
-                    weekPlan.days[dayIdx].sessions[sessionIndex].note = trimmed.isEmpty ? nil : trimmed
-                }
-                persistWeek()
-                break
-            }
-        }
-    }
-
-    func setSessionNote(sessionID: UUID, note: String?) {
-        for dayIdx in weekPlan.days.indices {
-            if let sessionIndex = weekPlan.days[dayIdx].sessions.firstIndex(where: { $0.id == sessionID }) {
-                let trimmed = note?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                weekPlan.days[dayIdx].sessions[sessionIndex].note = trimmed.isEmpty ? nil : trimmed
-                persistWeek()
-                break
-            }
-        }
-    }
-
-    func updateRunDetail(sessionID: UUID, detail: RunDetailData, status: PlanStatus, actualDistance: String? = nil, actualDuration: String? = nil, actualElevation: String? = nil) {
-        for dayIdx in weekPlan.days.indices {
-            if let sessionIndex = weekPlan.days[dayIdx].sessions.firstIndex(where: { $0.id == sessionID }) {
-                weekPlan.days[dayIdx].sessions[sessionIndex].runDetail = detail
-                weekPlan.days[dayIdx].sessions[sessionIndex].title = detail.title
-                weekPlan.days[dayIdx].sessions[sessionIndex].note = detail.notes.isEmpty ? weekPlan.days[dayIdx].sessions[sessionIndex].note : detail.notes
-                weekPlan.days[dayIdx].sessions[sessionIndex].status = status
-
-                if let actualDistance, !actualDistance.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    var actual = weekPlan.days[dayIdx].sessions[sessionIndex].actualRun
-                    let baseTitle = actual?.title ?? detail.title
-                    actual = RunDetailData(
-                        title: baseTitle,
-                        notes: actual?.notes ?? "",
-                        distance: actualDistance,
-                        duration: actual?.duration ?? "",
-                        averageHR: actual?.averageHR ?? "",
-                        category: detail.category,
-                        hkWorkoutUUID: actual?.hkWorkoutUUID,
-                        elevationGain: actual?.elevationGain
-                    )
-                    weekPlan.days[dayIdx].sessions[sessionIndex].actualRun = actual
-                } else if actualDistance != nil {
-                    // Explicit clear of distance
-                    if var actual = weekPlan.days[dayIdx].sessions[sessionIndex].actualRun {
-                        actual.distance = ""
-                        weekPlan.days[dayIdx].sessions[sessionIndex].actualRun = actual
+                    if status == .skipped {
+                        weekPlan.days[dayIdx].workouts[workoutIndex].skipReason = trimmed.isEmpty ? nil : trimmed
+                    } else {
+                        weekPlan.days[dayIdx].workouts[workoutIndex].notes = trimmed.isEmpty ? nil : trimmed
                     }
                 }
-
-                if let actualDuration {
-                    var actual = weekPlan.days[dayIdx].sessions[sessionIndex].actualRun ?? RunDetailData(title: detail.title, notes: "", distance: "", duration: "", averageHR: "", category: detail.category, hkWorkoutUUID: detail.hkWorkoutUUID)
-                    actual.duration = actualDuration
-                    weekPlan.days[dayIdx].sessions[sessionIndex].actualRun = actual
-                }
-
-                if let actualElevation {
-                    var actual = weekPlan.days[dayIdx].sessions[sessionIndex].actualRun ?? RunDetailData(title: detail.title, notes: "", distance: "", duration: "", averageHR: "", category: detail.category, hkWorkoutUUID: detail.hkWorkoutUUID)
-                    actual.elevationGain = actualElevation
-                    weekPlan.days[dayIdx].sessions[sessionIndex].actualRun = actual
-                }
-
+                weekPlan.days[dayIdx].workouts[workoutIndex].touchUpdatedAt()
                 persistWeek()
                 break
             }
         }
     }
 
-    func attachActualRun(to day: Date, run: UnattachedRun, toSessionID: UUID? = nil) {
+    func setWorkoutNote(workoutID: UUID, note: String?) {
+        for dayIdx in weekPlan.days.indices {
+            if let workoutIndex = weekPlan.days[dayIdx].workouts.firstIndex(where: { $0.id == workoutID }) {
+                let trimmed = note?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                weekPlan.days[dayIdx].workouts[workoutIndex].notes = trimmed.isEmpty ? nil : trimmed
+                weekPlan.days[dayIdx].workouts[workoutIndex].touchUpdatedAt()
+                persistWeek()
+                break
+            }
+        }
+    }
+
+    func updateEnduranceWorkout(
+        workoutID: UUID,
+        title: String,
+        runType: RunType?,
+        plannedDistance: String,
+        plannedDuration: String,
+        plannedElevation: String,
+        status: WorkoutStatus,
+        actualDistance: String? = nil,
+        actualDuration: String? = nil,
+        actualElevation: String? = nil
+    ) {
+        for dayIdx in weekPlan.days.indices {
+            if let workoutIndex = weekPlan.days[dayIdx].workouts.firstIndex(where: { $0.id == workoutID }) {
+                WorkoutEditing.applyEnduranceSave(
+                    to: &weekPlan.days[dayIdx].workouts[workoutIndex],
+                    title: title,
+                    runType: runType,
+                    plannedDistance: plannedDistance,
+                    plannedDuration: plannedDuration,
+                    plannedElevation: plannedElevation,
+                    actualDistance: actualDistance,
+                    actualDuration: actualDuration,
+                    actualElevation: actualElevation,
+                    status: status
+                )
+                persistWeek()
+                break
+            }
+        }
+    }
+
+    func attachActualRun(to day: Date, run: UnattachedRun, toWorkoutID: UUID? = nil) {
         guard let dayIndex = weekPlan.days.firstIndex(where: { calendar.isDate($0.date, inSameDayAs: day) }) else { return }
-        if let targetID = toSessionID,
-           let sessionIndex = weekPlan.days[dayIndex].sessions.firstIndex(where: { $0.id == targetID }) {
-            weekPlan.days[dayIndex].sessions[sessionIndex].actualRun = run.detail
-            weekPlan.days[dayIndex].sessions[sessionIndex].status = .completed
-        } else if let sessionIndex = weekPlan.days[dayIndex].sessions.firstIndex(where: { $0.kind == .run && $0.runDetail != nil && $0.actualRun == nil }) {
-            weekPlan.days[dayIndex].sessions[sessionIndex].actualRun = run.detail
-            weekPlan.days[dayIndex].sessions[sessionIndex].status = .completed
+        if let targetID = toWorkoutID,
+           let workoutIndex = weekPlan.days[dayIndex].workouts.firstIndex(where: { $0.id == targetID }) {
+            WorkoutEditing.applyAttachedRun(run.detail, to: &weekPlan.days[dayIndex].workouts[workoutIndex])
+        } else if let workoutIndex = weekPlan.days[dayIndex].workouts.firstIndex(where: {
+            $0.activityType.sessionKind == .run && $0.hasPlannedEnduranceDetail && !$0.hasCompletedEnduranceDetail
+        }) {
+            WorkoutEditing.applyAttachedRun(run.detail, to: &weekPlan.days[dayIndex].workouts[workoutIndex])
         } else {
-            // No planned run; add as unplanned actual
-            var session = PlannedSession(
+            var workout = Workout.run(
+                plannedDate: day,
                 title: run.detail.title.isEmpty ? "Run" : run.detail.title,
-                kind: .run,
-                status: .completed,
-                note: "Imported from HealthKit",
-                templateName: nil,
-                runDetail: nil
+                imported: true,
+                notes: "Imported from HealthKit"
             )
-            session.actualRun = run.detail
-            weekPlan.days[dayIndex].sessions.append(session)
+            WorkoutEditing.applyAttachedRun(run.detail, to: &workout)
+            weekPlan.days[dayIndex].workouts.append(workout)
         }
         persistWeek()
     }
 
-    func detachActualRun(sessionID: UUID) {
+    func detachActualRun(workoutID: UUID) {
         for dayIdx in weekPlan.days.indices {
-            if let sessionIndex = weekPlan.days[dayIdx].sessions.firstIndex(where: { $0.id == sessionID }) {
-                if let actual = weekPlan.days[dayIdx].sessions[sessionIndex].actualRun {
-                    let unattached = UnattachedRun(detail: actual, date: weekPlan.days[dayIdx].date, source: "Detached")
+            if let workoutIndex = weekPlan.days[dayIdx].workouts.firstIndex(where: { $0.id == workoutID }) {
+                if let detail = WorkoutEditing.detachCompletedRun(from: &weekPlan.days[dayIdx].workouts[workoutIndex]) {
+                    let unattached = UnattachedRun(detail: detail, date: weekPlan.days[dayIdx].date, source: "Detached")
                     addUnattachedRun(unattached)
-                }
-                weekPlan.days[dayIdx].sessions[sessionIndex].actualRun = nil
-                if weekPlan.days[dayIdx].sessions[sessionIndex].status == .completed,
-                   weekPlan.days[dayIdx].sessions[sessionIndex].runDetail == nil {
-                    weekPlan.days[dayIdx].sessions[sessionIndex].status = .planned
                 }
                 persistWeek()
                 break
@@ -443,9 +389,8 @@ final class WeekPlannerViewModel: ObservableObject {
 
     private func hasAttachedRun(with uuid: String) -> Bool {
         for day in weekPlan.days {
-            for session in day.sessions where session.kind == .run {
-                if session.runDetail?.hkWorkoutUUID == uuid { return true }
-                if session.actualRun?.hkWorkoutUUID == uuid { return true }
+            for workout in day.workouts where workout.activityType.sessionKind == .run {
+                if workout.linkedHealthKitUUID == uuid { return true }
             }
         }
         return false
@@ -491,16 +436,33 @@ final class WeekPlannerViewModel: ObservableObject {
             sigs.insert(runSignature(for: unattached))
         }
         for day in weekPlan.days {
-            for session in day.sessions where session.kind == .run {
-                if let detail = session.runDetail {
-                    sigs.insert(detailSignature(detail, fallbackDate: day.date))
+            for workout in day.workouts where workout.activityType.sessionKind == .run {
+                if workout.hasPlannedEnduranceDetail {
+                    sigs.insert(enduranceSignature(for: workout, planned: true, fallbackDate: day.date))
                 }
-                if let detail = session.actualRun {
-                    sigs.insert(detailSignature(detail, fallbackDate: day.date))
+                if workout.hasCompletedEnduranceDetail {
+                    sigs.insert(enduranceSignature(for: workout, planned: false, fallbackDate: day.date))
                 }
             }
         }
         return sigs
+    }
+
+    private func enduranceSignature(for workout: Workout, planned: Bool, fallbackDate: Date) -> String {
+        if planned {
+            let detail = RunDetailData(
+                title: workout.title,
+                notes: workout.plannedValues.plannedDescription ?? "",
+                distance: workout.plannedDistance,
+                duration: workout.plannedDuration,
+                averageHR: "",
+                category: workout.runType?.runCategory,
+                hkWorkoutUUID: nil,
+                elevationGain: workout.plannedElevation
+            )
+            return detailSignature(detail, fallbackDate: fallbackDate)
+        }
+        return detailSignature(WorkoutEditing.completedRunDetail(from: workout), fallbackDate: fallbackDate)
     }
 
     private func sha256Hex(of string: String) -> String {
@@ -537,40 +499,28 @@ final class WeekPlannerViewModel: ObservableObject {
         let start = start ?? calendar.startOfWeek(for: Date())
         let days: [DayPlan] = (0..<7).compactMap { offset in
             guard let date = calendar.date(byAdding: .day, value: offset, to: start) else { return nil }
-            var sessions: [PlannedSession] = []
+            var workouts: [Workout] = []
             if offset == 0, let template = templates.first {
-                sessions.append(
-                    PlannedSession(
-                        title: template.name,
-                        kind: template.category == .run ? .run : .strength,
-                        status: .planned,
-                        note: "Tap to log sets and mark complete",
-                        templateName: template.name
-                    )
-                )
+                var workout = Workout.from(template: template, plannedDate: date)
+                workout.notes = "Tap to log sets and mark complete"
+                workouts.append(workout)
             }
             if offset == 2 {
-                sessions.append(
-                    PlannedSession(
+                workouts.append(
+                    Workout.run(
+                        plannedDate: date,
                         title: "Easy Run 4 mi",
-                        kind: .run,
-                        status: .planned,
-                        note: "Will prompt to attach when HealthKit run is detected"
+                        imported: false,
+                        notes: "Will prompt to attach when HealthKit run is detected"
                     )
                 )
             }
             if offset == 4, templates.count > 1 {
-                sessions.append(
-                    PlannedSession(
-                        title: templates[1].name,
-                        kind: templates[1].category == .run ? .run : .strength,
-                        status: .planned,
-                        note: "Use template for progressive overload",
-                        templateName: templates[1].name
-                    )
-                )
+                var workout = Workout.from(template: templates[1], plannedDate: date)
+                workout.notes = "Use template for progressive overload"
+                workouts.append(workout)
             }
-            return DayPlan(date: date, sessions: sessions)
+            return DayPlan(date: date, workouts: workouts)
         }
         return WeekPlan(startOfWeek: start, days: days)
     }
@@ -578,39 +528,30 @@ final class WeekPlannerViewModel: ObservableObject {
     static func makeEmptyWeek(calendar: Calendar, start: Date) -> WeekPlan {
         let days: [DayPlan] = (0..<7).compactMap { offset in
             guard let date = calendar.date(byAdding: .day, value: offset, to: start) else { return nil }
-            return DayPlan(date: date, sessions: [])
+            return DayPlan(date: date, workouts: [])
         }
         return WeekPlan(startOfWeek: start, days: days)
     }
 
     func exportCurrentWeek() -> URL? {
         do {
-            // Create a copy of weekPlan with strength logs included
             var exportPlan = weekPlan
             var strengthLogsIncluded = 0
-            
+
             for dayIdx in exportPlan.days.indices {
-                for sessionIdx in exportPlan.days[dayIdx].sessions.indices {
-                    let session = exportPlan.days[dayIdx].sessions[sessionIdx]
-                    
-                    // Load strength log if this is a strength session
-                    if session.kind == .strength {
-                        let logURL = Self.strengthLogURL(for: session.id)
-                        if FileManager.default.fileExists(atPath: logURL.path) {
-                            do {
-                                let logData = try Data(contentsOf: logURL)
-                                let decoder = JSONDecoder()
-                                let strengthLog = try decoder.decode(StrengthLogState.self, from: logData)
-                                exportPlan.days[dayIdx].sessions[sessionIdx].strengthLog = strengthLog
-                                strengthLogsIncluded += 1
-                            } catch {
-                                print("⚠️ Failed to load strength log for session \(session.id): \(error)")
-                            }
-                        }
+                for workoutIdx in exportPlan.days[dayIdx].workouts.indices {
+                    let workout = exportPlan.days[dayIdx].workouts[workoutIdx]
+                    guard workout.activityType == .strength else { continue }
+
+                    let logURL = StrengthLogPersistence.strengthLogURL(for: workout.id)
+                    if let log = StrengthLogPersistence.load(from: logURL) {
+                        exportPlan.days[dayIdx].workouts[workoutIdx].completedValues.completedStrengthRoutineSnapshot =
+                            strengthSnapshot(from: log)
+                        strengthLogsIncluded += 1
                     }
                 }
             }
-            
+
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             encoder.outputFormatting = [.prettyPrinted]
@@ -619,7 +560,7 @@ final class WeekPlannerViewModel: ObservableObject {
             try data.write(to: url, options: .atomic)
             print("📤 Exported week to: \(url.path)")
             print("   Days: \(exportPlan.days.count)")
-            print("   Total sessions: \(exportPlan.days.flatMap { $0.sessions }.count)")
+            print("   Total workouts: \(exportPlan.days.flatMap { $0.workouts }.count)")
             print("   Strength logs included: \(strengthLogsIncluded)")
             return url
         } catch {
@@ -627,20 +568,14 @@ final class WeekPlannerViewModel: ObservableObject {
             return nil
         }
     }
-    
-    private static func strengthLogURL(for sessionID: UUID) -> URL {
-        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        return documentsPath.appendingPathComponent("strengthlog-\(sessionID.uuidString).json")
-    }
 
     func importWeek(from url: URL) {
-        // Start accessing security-scoped resource
         guard url.startAccessingSecurityScopedResource() else {
             print("❌ Failed to access security-scoped resource")
             return
         }
         defer { url.stopAccessingSecurityScopedResource() }
-        
+
         do {
             let data = try Data(contentsOf: url)
             let decoder = JSONDecoder()
@@ -648,27 +583,20 @@ final class WeekPlannerViewModel: ObservableObject {
             let imported = try decoder.decode(WeekPlan.self, from: data)
             print("✅ Successfully decoded WeekPlan with \(imported.days.count) days")
             print("   Start of week: \(imported.startOfWeek)")
-            print("   Total sessions: \(imported.days.flatMap { $0.sessions }.count)")
-            
-            // Restore strength logs for strength sessions
+            print("   Total workouts: \(imported.days.flatMap { $0.workouts }.count)")
+
             var strengthLogsRestored = 0
             for day in imported.days {
-                for session in day.sessions {
-                    if session.kind == .strength, let strengthLog = session.strengthLog {
-                        let logURL = Self.strengthLogURL(for: session.id)
-                        do {
-                            let encoder = JSONEncoder()
-                            encoder.outputFormatting = [.prettyPrinted]
-                            let logData = try encoder.encode(strengthLog)
-                            try logData.write(to: logURL, options: .atomic)
-                            strengthLogsRestored += 1
-                        } catch {
-                            print("⚠️ Failed to restore strength log for session \(session.id): \(error)")
-                        }
+                for workout in day.workouts where workout.activityType == .strength {
+                    if let snapshot = workout.completedValues.completedStrengthRoutineSnapshot {
+                        let log = strengthLogState(from: snapshot, workout: workout)
+                        let logURL = StrengthLogPersistence.strengthLogURL(for: workout.id)
+                        try StrengthLogPersistence.save(log, to: logURL)
+                        strengthLogsRestored += 1
                     }
                 }
             }
-            
+
             self.weekPlan = imported
             self.currentStartOfWeek = imported.startOfWeek
             persistWeek(for: imported.startOfWeek)
@@ -677,6 +605,60 @@ final class WeekPlannerViewModel: ObservableObject {
         } catch {
             print("❌ Failed to import week: \(error)")
         }
+    }
+
+    private func strengthSnapshot(from log: StrengthLogState) -> StrengthRoutineSnapshot {
+        let exercises = log.exercises.enumerated().map { index, exercise in
+            StrengthExerciseSnapshot(
+                id: exercise.id,
+                name: exercise.name,
+                orderIndex: index,
+                targetSets: exercise.sets.enumerated().map { setIndex, set in
+                    StrengthSetSnapshot(
+                        id: set.id,
+                        setNumber: setIndex + 1,
+                        targetReps: Int(set.repHint.filter { $0.isNumber }),
+                        targetWeight: parseDouble(from: set.weight),
+                        repHint: set.repHint.isEmpty ? nil : set.repHint,
+                        actualReps: set.reps.isEmpty ? nil : set.reps,
+                        actualWeight: set.weight.isEmpty ? nil : set.weight
+                    )
+                },
+                exerciseRPE: exercise.rpe.isEmpty ? nil : exercise.rpe
+            )
+        }
+        return StrengthRoutineSnapshot(exercises: exercises)
+    }
+
+    private func strengthLogState(from snapshot: StrengthRoutineSnapshot, workout: Workout) -> StrengthLogState {
+        let exercises = snapshot.exercises.sorted { $0.orderIndex < $1.orderIndex }.map { exercise in
+            ExerciseLog(
+                id: exercise.id,
+                name: exercise.name,
+                sets: exercise.targetSets.map { set in
+                    SetLog(
+                        id: set.id,
+                        weight: set.actualWeight ?? (set.targetWeight.map { String(Int($0)) } ?? ""),
+                        reps: set.actualReps ?? "",
+                        repHint: set.repHint ?? set.targetReps.map(String.init) ?? ""
+                    )
+                },
+                rpe: exercise.exerciseRPE ?? ""
+            )
+        }
+        let isCompleted = workout.status == .completed || workout.status == .partiallyCompleted
+        return StrengthLogState(
+            sessionID: workout.id,
+            exercises: exercises,
+            isCompleted: isCompleted,
+            updatedAt: workout.completedValues.completedAt ?? workout.metadata.updatedAt
+        )
+    }
+
+    private func parseDouble(from string: String) -> Double? {
+        let filtered = string.filter { "0123456789.".contains($0) }
+        guard !filtered.isEmpty, let value = Double(filtered) else { return nil }
+        return value
     }
 
     private func persistWeek(for start: Date? = nil) {
@@ -688,15 +670,11 @@ final class WeekPlannerViewModel: ObservableObject {
         persistWeek(for: currentStartOfWeek)
     }
 
-    // MARK: - Sync helpers
-
     @MainActor
     func forceSync() async {
-        // Push local state
         persistWeek()
         persistUnattached()
         persistWeeklyTemplates()
-        // Pull latest from stores
         if let loaded = weekStore.loadWeek(start: currentStartOfWeek) {
             weekPlan = loaded
         }
@@ -704,4 +682,3 @@ final class WeekPlannerViewModel: ObservableObject {
         weeklyTemplates = weeklyTemplateStore.loadTemplates()
     }
 }
-

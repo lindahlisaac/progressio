@@ -176,16 +176,44 @@ struct PlannedSession: Identifiable, Codable {
 struct DayPlan: Identifiable, Codable {
     let id: UUID
     let date: Date
-    var sessions: [PlannedSession]
+    var workouts: [Workout]
     var updatedAt: Date?
     var etag: String?
 
-    init(id: UUID = UUID(), date: Date, sessions: [PlannedSession] = [], updatedAt: Date? = Date(), etag: String? = nil) {
+    init(id: UUID = UUID(), date: Date, workouts: [Workout] = [], updatedAt: Date? = Date(), etag: String? = nil) {
         self.id = id
         self.date = date
-        self.sessions = sessions
+        self.workouts = workouts
         self.updatedAt = updatedAt
         self.etag = etag
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        date = try container.decode(Date.self, forKey: .date)
+        let decodedDate = date
+        if let decodedWorkouts = try container.decodeIfPresent([Workout].self, forKey: .workouts) {
+            workouts = decodedWorkouts
+        } else {
+            let sessions = try container.decode([PlannedSession].self, forKey: .sessions)
+            workouts = sessions.map { LegacySessionMapper.workout(from: $0, plannedDate: decodedDate) }
+        }
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
+        etag = try container.decodeIfPresent(String.self, forKey: .etag)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(date, forKey: .date)
+        try container.encode(workouts, forKey: .workouts)
+        try container.encodeIfPresent(updatedAt, forKey: .updatedAt)
+        try container.encodeIfPresent(etag, forKey: .etag)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, date, workouts, sessions, updatedAt, etag
     }
 }
 

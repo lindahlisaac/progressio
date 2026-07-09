@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct StrengthLogView: View {
-    let session: PlannedSession
+    let workout: Workout
     var onNoteChange: ((String) -> Void)?
     @State private var exercises: [ExerciseLog]
     private let initialExercises: [ExerciseLog]
@@ -59,12 +59,12 @@ struct StrengthLogView: View {
         }
     }
 
-    init(session: PlannedSession, template: StrengthTemplate?, onNoteChange: ((String) -> Void)? = nil, onCompleteStatus: (() -> Void)? = nil, onUnlockStatus: (() -> Void)? = nil) {
-        self.session = session
+    init(workout: Workout, template: StrengthTemplate?, onNoteChange: ((String) -> Void)? = nil, onCompleteStatus: (() -> Void)? = nil, onUnlockStatus: (() -> Void)? = nil) {
+        self.workout = workout
         self.onNoteChange = onNoteChange
         self.onCompleteStatus = onCompleteStatus
         self.onUnlockStatus = onUnlockStatus
-        self.storageURL = StrengthLogPersistence.strengthLogURL(for: session.id)
+        self.storageURL = StrengthLogPersistence.strengthLogURL(for: workout.id)
 
         if let template {
             let seeded: [ExerciseLog] = template.exercises.map { exercise -> ExerciseLog in
@@ -88,16 +88,16 @@ struct StrengthLogView: View {
 
         if let loaded = StrengthLogPersistence.load(from: storageURL) {
             _exercises = State(initialValue: loaded.exercises)
-            let completed = session.status == .completed ? loaded.isCompleted : false
+            let completed = workout.status == .completed || workout.status == .partiallyCompleted ? loaded.isCompleted : false
             _isCompleted = State(initialValue: completed)
             _isLocked = State(initialValue: completed)
-            _note = State(initialValue: session.note ?? "")
+            _note = State(initialValue: workout.notes ?? "")
         } else {
             _exercises = State(initialValue: initialExercises)
-            let completed = session.status == .completed
+            let completed = workout.status == .completed || workout.status == .partiallyCompleted
             _isCompleted = State(initialValue: completed)
             _isLocked = State(initialValue: completed)
-            _note = State(initialValue: session.note ?? "")
+            _note = State(initialValue: workout.notes ?? "")
         }
     }
 
@@ -122,7 +122,7 @@ struct StrengthLogView: View {
             }
             .onDelete(perform: deleteExercise)
         }
-        .navigationTitle(session.title)
+        .navigationTitle(workout.title)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -270,7 +270,7 @@ struct StrengthLogView: View {
     }
 
     private func persistState() {
-        let state = StrengthLogState(sessionID: session.id, exercises: exercises, isCompleted: isCompleted)
+        let state = StrengthLogState(sessionID: workout.id, exercises: exercises, isCompleted: isCompleted)
         do {
             try StrengthLogPersistence.save(state, to: storageURL)
             print("Saved strength log to \(storageURL.lastPathComponent)")
@@ -282,7 +282,7 @@ struct StrengthLogView: View {
     private func reloadStateIfAvailable() {
         if let latest = StrengthLogPersistence.load(from: storageURL) {
             exercises = latest.exercises
-            let completed = session.status == .completed ? latest.isCompleted : false
+            let completed = workout.status == .completed || workout.status == .partiallyCompleted ? latest.isCompleted : false
             isCompleted = completed
             isLocked = completed
         }

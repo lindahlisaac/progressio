@@ -319,9 +319,18 @@ Aligned with `tasks/README.md` ordering:
 - **Follow-up fix** — `SyncRecordMerge.pick` corrected so newer active records win over older tombstones; resurrection still blocked when active is newer than an existing tombstone (`SyncRecordMergeTests`).
 - **Known gaps (acceptable for 006)**: planner `removeSession` still hard-deletes sessions (workout-level soft delete is Task 007+); CloudKit orphan record cleanup deferred; strength logs still local-only (Task 021).
 
-### Next up — Task 007
+### Task 007 — Wire View Models to Workout Model
 
-- Wire view models and planner views from `PlannedSession` to `Workout`; filter soft-deleted workouts in UI.
+- **`DayPlan`** — `sessions: [PlannedSession]` replaced with `workouts: [Workout]`; decoder accepts legacy `sessions` key for import/export compatibility.
+- **`WeekPlanMapper`** — maps `WeekPlan` ↔ `MigratedWeekPlan` without `PlannedSession` round-trip at store boundary.
+- **`Workout+Planner.swift`** — factories, display helpers, `WorkoutEditing` for endurance attach/save.
+- **`WeekPlannerViewModel`** — CRUD, template apply, HealthKit attach, export/import all use `Workout`.
+- **Planner views** — `WeekPlannerView`, `RunDetailView`, `RideDetailView`, `StrengthLogView`, `UnattachedRunsView` take `Workout`; `WorkoutRow` replaces `SessionRow`.
+- **Still legacy at template boundary**: `DayTemplate.sessions` remains `[PlannedSession]` until Task 010; weekly template apply converts via `LegacySessionMapper`.
+
+### Next up — Task 008
+
+- Template snapshot-on-apply; strength log snapshot integration improvements.
 
 ---
 
@@ -401,4 +410,4 @@ progressio/progressio/
 
 ---
 
-*Last updated: Task 006 complete.*
+*Last updated: Task 007 complete.*

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Unified workout entity per target data model. Not yet wired into stores or UI (Task 007).
+/// Unified workout entity used by week plans and migrated on-disk storage.
 struct Workout: Identifiable, Codable, Equatable {
     let id: UUID
     var metadata: RecordMetadata

@@ -1,40 +1,38 @@
 import Foundation
 
-/// Converts between legacy `WeekPlan` and migrated `MigratedWeekPlan`.
+/// Converts between in-memory `WeekPlan` and on-disk `MigratedWeekPlan`.
 enum WeekPlanMapper {
 
-    static func migratedWeekPlan(from legacy: WeekPlan, fileModificationDate: Date? = nil) -> MigratedWeekPlan {
-        let fallbackTimestamp = fileModificationDate ?? legacy.updatedAt ?? Date()
-        let days = legacy.days.map { day in
+    static func migratedWeekPlan(from weekPlan: WeekPlan, fileModificationDate: Date? = nil) -> MigratedWeekPlan {
+        _ = fileModificationDate
+        let days = weekPlan.days.map { day in
             MigratedDayPlan(
                 id: day.id,
                 date: day.date,
-                workouts: day.sessions.map { session in
-                    workout(from: session, plannedDate: day.date, fallbackTimestamp: fallbackTimestamp)
-                },
+                workouts: day.workouts,
                 updatedAt: day.updatedAt,
                 etag: day.etag
             )
         }
 
         return MigratedWeekPlan(
-            startOfWeek: legacy.startOfWeek,
+            startOfWeek: weekPlan.startOfWeek,
             days: days,
-            schemaVersion: legacy.schemaVersion,
-            createdAt: legacy.createdAt,
-            updatedAt: legacy.updatedAt,
-            isDeleted: legacy.isDeleted,
-            deletedAt: legacy.deletedAt,
-            etag: legacy.etag
+            schemaVersion: weekPlan.schemaVersion,
+            createdAt: weekPlan.createdAt,
+            updatedAt: weekPlan.updatedAt,
+            isDeleted: weekPlan.isDeleted,
+            deletedAt: weekPlan.deletedAt,
+            etag: weekPlan.etag
         )
     }
 
-    static func legacyWeekPlan(from migrated: MigratedWeekPlan) -> WeekPlan {
+    static func weekPlan(from migrated: MigratedWeekPlan) -> WeekPlan {
         let days = migrated.days.map { day in
             DayPlan(
                 id: day.id,
                 date: day.date,
-                sessions: day.workouts.map { LegacySessionMapper.plannedSession(from: $0) },
+                workouts: day.workouts,
                 updatedAt: day.updatedAt,
                 etag: day.etag
             )
@@ -50,18 +48,5 @@ enum WeekPlanMapper {
             deletedAt: migrated.deletedAt,
             etag: migrated.etag
         )
-    }
-
-    private static func workout(
-        from session: PlannedSession,
-        plannedDate: Date,
-        fallbackTimestamp: Date
-    ) -> Workout {
-        var workout = LegacySessionMapper.workout(from: session, plannedDate: plannedDate)
-        if session.updatedAt == nil {
-            workout.metadata.createdAt = fallbackTimestamp
-            workout.metadata.updatedAt = fallbackTimestamp
-        }
-        return workout
     }
 }

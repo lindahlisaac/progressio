@@ -226,7 +226,7 @@ struct CloudWeekPlanStore: WeekPlanStore {
                 var migrated = try WeekPlanPersistence.decode(data)
                 migrated.updatedAt = record[CKFields.updatedAt] as? Date ?? migrated.updatedAt
                 migrated.etag = record[CKFields.etag] as? String ?? migrated.etag
-                var legacy = WeekPlanMapper.legacyWeekPlan(from: migrated)
+                var legacy = WeekPlanMapper.weekPlan(from: migrated)
                 legacy.updatedAt = migrated.updatedAt
                 legacy.etag = migrated.etag
                 result = legacy

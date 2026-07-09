@@ -37,7 +37,7 @@ enum WeekPlanPersistence {
 
     static func legacyWeekPlan(from url: URL, fileManager: FileManager = .default) throws -> WeekPlan {
         let migrated = try read(from: url, fileManager: fileManager)
-        return WeekPlanMapper.legacyWeekPlan(from: migrated)
+        return WeekPlanMapper.weekPlan(from: migrated)
     }
 
     static func fileModificationDate(for url: URL, fileManager: FileManager = .default) -> Date? {

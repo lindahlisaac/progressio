@@ -93,8 +93,8 @@ struct WeekPlannerView: View {
                 UnattachedRunsView(
                     runs: viewModel.activeUnattachedRuns,
                     days: viewModel.weekPlan.days,
-                    onAttach: { date, run, sessionID in
-                        viewModel.attachActualRun(to: date, run: run, toSessionID: sessionID)
+                    onAttach: { date, run, workoutID in
+                        viewModel.attachActualRun(to: date, run: run, toWorkoutID: workoutID)
                         viewModel.removeUnattachedRun(id: run.id)
                     }
                 )
@@ -160,7 +160,7 @@ struct WeekPlannerView: View {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Skip") {
                             if let id = skipSessionID {
-                                viewModel.setSessionStatus(sessionID: id, status: .skipped, note: skipNote)
+                                viewModel.setWorkoutStatus(workoutID: id, status: .skipped, note: skipNote)
                             }
                             showingSkipSheet = false
                             skipSessionID = nil
@@ -201,8 +201,8 @@ struct WeekPlannerView: View {
                     UnattachedRunsView(
                         runs: viewModel.activeUnattachedRuns,
                         days: viewModel.weekPlan.days,
-                        onAttach: { date, run, sessionID in
-                            viewModel.attachActualRun(to: date, run: run, toSessionID: sessionID)
+                        onAttach: { date, run, workoutID in
+                            viewModel.attachActualRun(to: date, run: run, toWorkoutID: workoutID)
                             viewModel.removeUnattachedRun(id: run.id)
                         }
                     )
@@ -268,22 +268,21 @@ struct WeekPlannerView: View {
     @ViewBuilder
     private func daySection(for day: DayPlan) -> some View {
         Section(header: Text(dayHeader(for: day.date))) {
-            if day.sessions.isEmpty {
+            if day.workouts.isEmpty {
                 Text("No sessions planned")
                     .foregroundStyle(.secondary)
             } else {
-                let sessions = day.sessions
-                ForEach(sessions) { session in
+                ForEach(day.workouts) { workout in
                     NavigationLink {
-                        sessionDestination(session)
+                        workoutDestination(workout)
                     } label: {
-                        SessionRow(
-                            session: session,
-                            onToggle: { viewModel.toggleStatus(sessionID: session.id) },
-                            onDelete: { viewModel.removeSession(dayID: day.id, sessionID: session.id) },
+                        WorkoutRow(
+                            workout: workout,
+                            onToggle: { viewModel.toggleStatus(workoutID: workout.id) },
+                            onDelete: { viewModel.removeWorkout(dayID: day.id, workoutID: workout.id) },
                             onSkip: {
-                                skipSessionID = session.id
-                                skipNote = session.note ?? ""
+                                skipSessionID = workout.id
+                                skipNote = workout.displayNote ?? ""
                                 showingSkipSheet = true
                             },
                             showsDisclosure: true
@@ -325,33 +324,55 @@ struct WeekPlannerView: View {
     }
 
     @ViewBuilder
-    private func sessionDestination(_ session: PlannedSession) -> some View {
-        if session.kind == .strength {
+    private func workoutDestination(_ workout: Workout) -> some View {
+        if workout.activityType == .strength {
             StrengthLogView(
-                session: session,
-                template: templatesViewModel.templates.first(where: { $0.name == session.templateName }),
+                workout: workout,
+                template: templatesViewModel.templates.first(where: { $0.name == workout.templateName }),
                 onNoteChange: { note in
-                    viewModel.setSessionNote(sessionID: session.id, note: note)
+                    viewModel.setWorkoutNote(workoutID: workout.id, note: note)
                 },
                 onCompleteStatus: {
-                    viewModel.setSessionStatus(sessionID: session.id, status: .completed)
+                    viewModel.setWorkoutStatus(workoutID: workout.id, status: .completed)
                 },
                 onUnlockStatus: {
-                    viewModel.setSessionStatus(sessionID: session.id, status: .planned)
+                    viewModel.setWorkoutStatus(workoutID: workout.id, status: .planned)
                 }
             )
-        } else if session.kind == .run {
+        } else if workout.activityType.sessionKind == .run {
             RunDetailView(
-                session: session,
-                onSave: { detail, status, actualDistance, actualDuration, actualElevation in
-                    viewModel.updateRunDetail(sessionID: session.id, detail: detail, status: status, actualDistance: actualDistance, actualDuration: actualDuration, actualElevation: actualElevation)
+                workout: workout,
+                onSave: { title, category, plannedDistance, plannedDuration, plannedElevation, status, actualDistance, actualDuration, actualElevation in
+                    viewModel.updateEnduranceWorkout(
+                        workoutID: workout.id,
+                        title: title,
+                        runType: category.flatMap(RunType.init(runCategory:)),
+                        plannedDistance: plannedDistance,
+                        plannedDuration: plannedDuration,
+                        plannedElevation: plannedElevation,
+                        status: status,
+                        actualDistance: actualDistance,
+                        actualDuration: actualDuration,
+                        actualElevation: actualElevation
+                    )
                 }
             )
         } else {
             RideDetailView(
-                session: session,
-                onSave: { detail, status, actualDistance, actualDuration, actualElevation in
-                    viewModel.updateRunDetail(sessionID: session.id, detail: detail, status: status, actualDistance: actualDistance, actualDuration: actualDuration, actualElevation: actualElevation)
+                workout: workout,
+                onSave: { title, _, plannedDistance, plannedDuration, plannedElevation, status, actualDistance, actualDuration, actualElevation in
+                    viewModel.updateEnduranceWorkout(
+                        workoutID: workout.id,
+                        title: title,
+                        runType: workout.runType,
+                        plannedDistance: plannedDistance,
+                        plannedDuration: plannedDuration,
+                        plannedElevation: plannedElevation,
+                        status: status,
+                        actualDistance: actualDistance,
+                        actualDuration: actualDuration,
+                        actualElevation: actualElevation
+                    )
                 }
             )
         }
@@ -364,51 +385,57 @@ struct WeekPlannerView: View {
     }
 
     private var plannedRunMiles: Double {
-        let sessions = viewModel.weekPlan.days.flatMap { $0.sessions }
-        let runs = sessions.filter { $0.kind == .run }
-        let total = runs.reduce(0.0) { partial, session in
-            partial + miles(from: session.runDetail?.distance)
+        let workouts = viewModel.weekPlan.days.flatMap { $0.workouts }
+        let runs = workouts.filter { $0.activityType.sessionKind == .run }
+        return runs.reduce(0.0) { partial, workout in
+            partial + miles(from: workout.plannedDistance)
         }
-        return total
     }
 
     private var completedRunMiles: Double {
-        let sessions = viewModel.weekPlan.days.flatMap { $0.sessions }
-        let runs = sessions.filter { $0.kind == .run && $0.status == .completed }
-        return runs.reduce(0.0) { partial, session in
-            partial + miles(from: session.actualRun?.distance ?? session.runDetail?.distance)
+        let workouts = viewModel.weekPlan.days.flatMap { $0.workouts }
+        let runs = workouts.filter { $0.activityType.sessionKind == .run && ($0.status == .completed || $0.status == .partiallyCompleted) }
+        return runs.reduce(0.0) { partial, workout in
+            let distance = workout.actualDistance.isEmpty ? workout.plannedDistance : workout.actualDistance
+            return partial + miles(from: distance)
         }
     }
 
     private var plannedRideMiles: Double {
-        let sessions = viewModel.weekPlan.days.flatMap { $0.sessions }
-        let rides = sessions.filter { $0.kind == .cycle }
-        return rides.reduce(0.0) { partial, session in
-            partial + miles(from: session.runDetail?.distance)
+        let workouts = viewModel.weekPlan.days.flatMap { $0.workouts }
+        let rides = workouts.filter { $0.activityType == .bike }
+        return rides.reduce(0.0) { partial, workout in
+            partial + miles(from: workout.plannedDistance)
         }
     }
 
     private var completedRideMiles: Double {
-        let sessions = viewModel.weekPlan.days.flatMap { $0.sessions }
-        let rides = sessions.filter { $0.kind == .cycle && $0.status == .completed }
-        return rides.reduce(0.0) { partial, session in
-            partial + miles(from: session.actualRun?.distance ?? session.runDetail?.distance)
+        let workouts = viewModel.weekPlan.days.flatMap { $0.workouts }
+        let rides = workouts.filter { $0.activityType == .bike && ($0.status == .completed || $0.status == .partiallyCompleted) }
+        return rides.reduce(0.0) { partial, workout in
+            let distance = workout.actualDistance.isEmpty ? workout.plannedDistance : workout.actualDistance
+            return partial + miles(from: distance)
         }
     }
 
     private var plannedStrengthCount: Int {
-        let sessions = viewModel.weekPlan.days.flatMap { $0.sessions }
-        return sessions.filter { $0.kind == .strength }.count
+        viewModel.weekPlan.days.flatMap { $0.workouts }.filter { $0.activityType == .strength }.count
     }
 
     private var completedStrengthCount: Int {
-        let sessions = viewModel.weekPlan.days.flatMap { $0.sessions }
-        return sessions.filter { $0.kind == .strength && $0.status == .completed }.count
+        var count = 0
+        for workout in viewModel.weekPlan.days.flatMap({ $0.workouts }) {
+            if workout.activityType == .strength,
+               workout.status == .completed || workout.status == .partiallyCompleted {
+                count += 1
+            }
+        }
+        return count
     }
 
-    private func miles(from distanceString: String?) -> Double {
-        guard let s = distanceString else { return 0 }
-        let filtered = s.filter { "0123456789.".contains($0) }
+    private func miles(from distanceString: String) -> Double {
+        guard !distanceString.isEmpty else { return 0 }
+        let filtered = distanceString.filter { "0123456789.".contains($0) }
         return Double(filtered) ?? 0
     }
 
@@ -437,20 +464,20 @@ private let shortDayFormatter: DateFormatter = {
     return formatter
 }()
 
-struct SessionRow: View {
-    let session: PlannedSession
+struct WorkoutRow: View {
+    let workout: Workout
     let onToggle: () -> Void
     let onDelete: () -> Void
     let onSkip: () -> Void
     var showsDisclosure: Bool = false
 
     private var leadingLabel: String {
-        switch session.status {
-        case .unplanned:
+        switch workout.status {
+        case .imported:
             return "Mark Planned"
         case .planned:
             return "Mark Complete"
-        case .completed:
+        case .completed, .partiallyCompleted:
             return "Mark Planned"
         case .skipped:
             return "Mark Planned"
@@ -459,68 +486,25 @@ struct SessionRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: session.kind.systemImage)
-                .foregroundStyle(color(for: session.kind))
+            Image(systemName: workout.sessionKind.systemImage)
+                .foregroundStyle(color(for: workout.sessionKind))
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(session.title)
+                Text(workout.title)
                     .font(.headline)
-                if session.kind == .run || session.kind == .cycle {
-                    if let actual = session.actualRun {
-                        HStack(spacing: 6) {
-                            if !actual.distance.isEmpty {
-                                Text("Actual \(actual.distance) mi")
-                                    .font(.caption)
-                                    .foregroundStyle(.primary)
-                            }
-                        }
-                        if let planned = session.runDetail, !planned.distance.isEmpty {
-                            Text("Planned \(planned.distance) mi")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        if session.kind == .run, let cat = session.runDetail?.category ?? session.actualRun?.category {
-                            chip(text: cat.rawValue, color: .blue)
-                        } else if session.kind == .cycle {
-                            chip(text: "Ride", color: .orange)
-                        }
-                    } else if let planned = session.runDetail {
-                        HStack(spacing: 6) {
-                            if !planned.distance.isEmpty {
-                                Text("\(planned.distance) mi")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            if session.kind == .run, let cat = planned.category {
-                                chip(text: cat.rawValue, color: .blue)
-                            } else if session.kind == .cycle {
-                                chip(text: "Ride", color: .orange)
-                            }
-                        }
-                    }
-                } else {
-                    if let template = session.templateName {
-                        Text(template)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    if let note = session.note {
-                        Text(truncated(note, limit: 60))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                enduranceSummary
+                strengthSummary
             }
 
             Spacer(minLength: 8)
 
             HStack(spacing: 6) {
-                Text(session.status.rawValue)
+                Text(workout.status.rawValue)
                     .font(.caption.weight(.semibold))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(session.status.tint.opacity(0.15))
-                    .foregroundStyle(session.status.tint)
+                    .background(workout.status.tint.opacity(0.15))
+                    .foregroundStyle(workout.status.tint)
                     .clipShape(Capsule())
             }
         }
@@ -536,15 +520,66 @@ struct SessionRow: View {
             Button {
                 onToggle()
             } label: {
-                Label(leadingLabel, systemImage: session.status == .completed ? "arrow.uturn.left" : "checkmark.circle")
+                Label(leadingLabel, systemImage: workout.status == .completed || workout.status == .partiallyCompleted ? "arrow.uturn.left" : "checkmark.circle")
             }
-            .tint(session.status == .completed ? .blue : .green)
+            .tint(workout.status == .completed || workout.status == .partiallyCompleted ? .blue : .green)
             Button {
                 onSkip()
             } label: {
                 Label("Skip", systemImage: "slash.circle")
             }
             .tint(.gray)
+        }
+    }
+
+    @ViewBuilder
+    private var enduranceSummary: some View {
+        if workout.activityType.sessionKind == .run || workout.activityType == .bike {
+            if workout.hasCompletedEnduranceDetail {
+                if !workout.actualDistance.isEmpty {
+                    Text("Actual \(workout.actualDistance) mi")
+                        .font(.caption)
+                        .foregroundStyle(.primary)
+                }
+                if !workout.plannedDistance.isEmpty {
+                    Text("Planned \(workout.plannedDistance) mi")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                enduranceChip
+            } else if workout.hasPlannedEnduranceDetail {
+                if !workout.plannedDistance.isEmpty {
+                    Text("\(workout.plannedDistance) mi")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                enduranceChip
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var enduranceChip: some View {
+        if workout.activityType.sessionKind == .run, let cat = workout.runType?.runCategory {
+            chip(text: cat.rawValue, color: .blue)
+        } else if workout.activityType == .bike {
+            chip(text: "Ride", color: .orange)
+        }
+    }
+
+    @ViewBuilder
+    private var strengthSummary: some View {
+        if workout.activityType == .strength {
+            if let template = workout.templateName {
+                Text(template)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if let note = workout.displayNote {
+                Text(truncated(note, limit: 60))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 }

@@ -27,7 +27,7 @@ private struct UnattachedRunRow: View {
     @State private var selectedDate: Date?
     @State private var showDayPicker = false
     @State private var showSessionPicker = false
-    @State private var sessionsForDay: [PlannedSession] = []
+    @State private var sessionsForDay: [Workout] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -77,9 +77,9 @@ private struct UnattachedRunRow: View {
                                 selectedDate = day.date
                                 showDayPicker = false
                                 if let date = selectedDate {
-                                    let sessions = day.sessions.filter { $0.kind == .run }
-                                    sessionsForDay = sessions
-                                    if sessions.isEmpty {
+                                    let workouts = day.workouts.filter { $0.activityType.sessionKind == .run }
+                                    sessionsForDay = workouts
+                                    if workouts.isEmpty {
                                         onAttach(date, run, nil)
                                     } else {
                                         showSessionPicker = true
@@ -107,18 +107,18 @@ private struct UnattachedRunRow: View {
                 NavigationStack {
                     List {
                         Section("Attach to planned run") {
-                            ForEach(sessionsForDay) { session in
+                            ForEach(sessionsForDay) { workout in
                                 Button {
                                     if let date = selectedDate {
-                                        onAttach(date, run, session.id)
+                                        onAttach(date, run, workout.id)
                                     }
                                     showSessionPicker = false
                                 } label: {
                                     VStack(alignment: .leading) {
-                                        Text(session.title)
+                                        Text(workout.title)
                                             .font(.body.weight(.semibold))
-                                        if let planned = session.runDetail?.distance, !planned.isEmpty {
-                                            Text("Planned \(planned) mi")
+                                        if !workout.plannedDistance.isEmpty {
+                                            Text("Planned \(workout.plannedDistance) mi")
                                                 .font(.caption)
                                                 .foregroundStyle(.secondary)
                                         }

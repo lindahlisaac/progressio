@@ -78,7 +78,7 @@ struct FileWeekPlanStore: WeekPlanStore {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         do {
             let migrated = try WeekPlanPersistence.read(from: url)
-            var legacy = WeekPlanMapper.legacyWeekPlan(from: migrated)
+            var legacy = WeekPlanMapper.weekPlan(from: migrated)
             if legacy.updatedAt == nil {
                 legacy.updatedAt = migrated.updatedAt
             }
