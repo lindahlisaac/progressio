@@ -328,9 +328,17 @@ Aligned with `tasks/README.md` ordering:
 - **Planner views** — `WeekPlannerView`, `RunDetailView`, `RideDetailView`, `StrengthLogView`, `UnattachedRunsView` take `Workout`; `WorkoutRow` replaces `SessionRow`.
 - **Still legacy at template boundary**: `DayTemplate.sessions` remains `[PlannedSession]` until Task 010; weekly template apply converts via `LegacySessionMapper`.
 
-### Next up — Task 008
+### Task 008 — Template Snapshot on Apply
 
-- Template snapshot-on-apply; strength log snapshot integration improvements.
+- **`TemplateSnapshot.swift`** — copies `StrengthTemplate` exercises into `StrengthRoutineSnapshot`; maps snapshots ↔ `ExerciseLog` for UI seeding and completion.
+- **`Workout.from(template:)`** — sets `linkedWorkoutTemplateId` for all template types; strength templates copy `plannedValues.plannedStrengthRoutineSnapshot` on apply.
+- **`StrengthLogView`** — seeds from workout snapshot (planned or completed), not live template lookup; syncs `completedStrengthRoutineSnapshot` to week plan on mark-complete.
+- **`WeekPlannerView`** — removed `templatesViewModel` template-by-name lookup for strength detail navigation.
+- **Still legacy**: weekly template apply (Task 010); strength logs remain file-backed with snapshot sync on complete (full CloudKit sync is Task 021).
+
+### Next up — Task 009
+
+- Endurance template model split.
 
 ---
 
@@ -410,4 +418,4 @@ progressio/progressio/
 
 ---
 
-*Last updated: Task 007 complete.*
+*Last updated: Task 008 complete.*

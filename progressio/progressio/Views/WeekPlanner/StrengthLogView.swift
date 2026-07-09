@@ -59,32 +59,22 @@ struct StrengthLogView: View {
         }
     }
 
-    init(workout: Workout, template: StrengthTemplate?, onNoteChange: ((String) -> Void)? = nil, onCompleteStatus: (() -> Void)? = nil, onUnlockStatus: (() -> Void)? = nil) {
+    init(
+        workout: Workout,
+        onNoteChange: ((String) -> Void)? = nil,
+        onCompleteStatus: (() -> Void)? = nil,
+        onUnlockStatus: (() -> Void)? = nil,
+        onCompletedSnapshotPersist: ((StrengthRoutineSnapshot) -> Void)? = nil
+    ) {
         self.workout = workout
         self.onNoteChange = onNoteChange
         self.onCompleteStatus = onCompleteStatus
         self.onUnlockStatus = onUnlockStatus
+        self.onCompletedSnapshotPersist = onCompletedSnapshotPersist
         self.storageURL = StrengthLogPersistence.strengthLogURL(for: workout.id)
 
-        if let template {
-            let seeded: [ExerciseLog] = template.exercises.map { exercise -> ExerciseLog in
-                let exerciseRPE = exercise.sets.first?.targetRPE.map { String(format: "%.1f", $0) } ?? ""
-                return ExerciseLog(
-                    name: exercise.name,
-                    sets: exercise.sets.map { set -> SetLog in
-                        return SetLog(
-                            weight: set.targetWeight > 0 ? String(Int(set.targetWeight)) : "",
-                            reps: "",
-                            repHint: set.repRange ?? (set.targetReps > 0 ? String(set.targetReps) : "")
-                        )
-                    },
-                    rpe: exerciseRPE
-                )
-            }
-            self.initialExercises = seeded
-        } else {
-            self.initialExercises = []
-        }
+        let seededFromSnapshot = Self.seedExercises(from: workout)
+        self.initialExercises = seededFromSnapshot
 
         if let loaded = StrengthLogPersistence.load(from: storageURL) {
             _exercises = State(initialValue: loaded.exercises)
@@ -93,12 +83,24 @@ struct StrengthLogView: View {
             _isLocked = State(initialValue: completed)
             _note = State(initialValue: workout.notes ?? "")
         } else {
-            _exercises = State(initialValue: initialExercises)
+            _exercises = State(initialValue: seededFromSnapshot)
             let completed = workout.status == .completed || workout.status == .partiallyCompleted
             _isCompleted = State(initialValue: completed)
             _isLocked = State(initialValue: completed)
             _note = State(initialValue: workout.notes ?? "")
         }
+    }
+
+    private let onCompletedSnapshotPersist: ((StrengthRoutineSnapshot) -> Void)?
+
+    private static func seedExercises(from workout: Workout) -> [ExerciseLog] {
+        if let completed = workout.completedValues.completedStrengthRoutineSnapshot {
+            return TemplateSnapshot.exerciseLogs(from: completed, preferActuals: true)
+        }
+        if let planned = workout.plannedValues.plannedStrengthRoutineSnapshot {
+            return TemplateSnapshot.exerciseLogs(from: planned)
+        }
+        return []
     }
 
     var body: some View {
@@ -274,6 +276,9 @@ struct StrengthLogView: View {
         do {
             try StrengthLogPersistence.save(state, to: storageURL)
             print("Saved strength log to \(storageURL.lastPathComponent)")
+            if isCompleted {
+                onCompletedSnapshotPersist?(TemplateSnapshot.completedSnapshot(from: exercises))
+            }
         } catch {
             print("Failed to persist strength log at \(storageURL): \(error)")
         }

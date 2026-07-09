@@ -242,6 +242,20 @@ final class WeekPlannerViewModel: ObservableObject {
         }
     }
 
+    func updateCompletedStrengthSnapshot(workoutID: UUID, snapshot: StrengthRoutineSnapshot) {
+        for dayIdx in weekPlan.days.indices {
+            if let workoutIndex = weekPlan.days[dayIdx].workouts.firstIndex(where: { $0.id == workoutID }) {
+                weekPlan.days[dayIdx].workouts[workoutIndex].completedValues.completedStrengthRoutineSnapshot = snapshot
+                if weekPlan.days[dayIdx].workouts[workoutIndex].completedValues.completedAt == nil {
+                    weekPlan.days[dayIdx].workouts[workoutIndex].completedValues.completedAt = Date()
+                }
+                weekPlan.days[dayIdx].workouts[workoutIndex].touchUpdatedAt()
+                persistWeek()
+                break
+            }
+        }
+    }
+
     func updateEnduranceWorkout(
         workoutID: UUID,
         title: String,

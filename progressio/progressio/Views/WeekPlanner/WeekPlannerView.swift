@@ -328,7 +328,6 @@ struct WeekPlannerView: View {
         if workout.activityType == .strength {
             StrengthLogView(
                 workout: workout,
-                template: templatesViewModel.templates.first(where: { $0.name == workout.templateName }),
                 onNoteChange: { note in
                     viewModel.setWorkoutNote(workoutID: workout.id, note: note)
                 },
@@ -337,6 +336,9 @@ struct WeekPlannerView: View {
                 },
                 onUnlockStatus: {
                     viewModel.setWorkoutStatus(workoutID: workout.id, status: .planned)
+                },
+                onCompletedSnapshotPersist: { snapshot in
+                    viewModel.updateCompletedStrengthSnapshot(workoutID: workout.id, snapshot: snapshot)
                 }
             )
         } else if workout.activityType.sessionKind == .run {

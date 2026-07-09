@@ -91,16 +91,22 @@ extension Workout {
                 plannedValues: planned,
                 status: .planned,
                 source: .template,
+                linkedWorkoutTemplateId: template.id,
                 templateName: template.name,
                 notes: "From template"
             )
         }
+
+        var planned = PlannedValues.empty
+        planned.plannedStrengthRoutineSnapshot = TemplateSnapshot.plannedSnapshot(from: template)
         return Workout(
             plannedDate: plannedDate,
             title: template.name,
             activityType: .strength,
+            plannedValues: planned,
             status: .planned,
             source: .template,
+            linkedWorkoutTemplateId: template.id,
             templateName: template.name,
             notes: "From template"
         )
