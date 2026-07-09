@@ -15,8 +15,8 @@ enum AppDataMigration {
   static let templatesMigratedVersion = 3
 
   /// Highest migration step that runs in the current app release.
-  /// Stub steps for 004–005 exist in `MigrationSteps.swift` but stay inactive until those tasks ship.
-  static let latestVersion = baselineVersion
+  /// Task 005 stub exists in `MigrationSteps.swift` but stays out of `defaultSteps` until that task ships.
+  static let latestVersion = weekPlansMigratedVersion
 
   static let versionFileName = "dataVersion.json"
 }

@@ -82,10 +82,12 @@ struct FileWeekPlanStore: WeekPlanStore {
         let url = fileURL(for: start)
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         do {
-            let data = try Data(contentsOf: url)
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            return try decoder.decode(WeekPlan.self, from: data)
+            let migrated = try WeekPlanPersistence.read(from: url)
+            var legacy = WeekPlanMapper.legacyWeekPlan(from: migrated)
+            if legacy.updatedAt == nil {
+                legacy.updatedAt = migrated.updatedAt
+            }
+            return legacy
         } catch {
             print("Failed to load week: \(error)")
             return nil
@@ -93,15 +95,12 @@ struct FileWeekPlanStore: WeekPlanStore {
     }
 
     func save(_ week: WeekPlan, start: Date) {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted]
         do {
-            var stampedWeek = week
-            stampedWeek.updatedAt = Date()
-            let data = try encoder.encode(stampedWeek)
+            let migrated = WeekPlanMapper.migratedWeekPlan(from: week)
+            var stamped = migrated
+            stamped.updatedAt = Date()
             let url = fileURL(for: start)
-            try data.write(to: url, options: .atomic)
+            try WeekPlanPersistence.write(stamped, to: url)
         } catch {
             print("Failed to persist week: \(error)")
         }

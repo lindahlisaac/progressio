@@ -161,6 +161,10 @@ struct SyncingWeekPlanStore: WeekPlanStore {
     }
 
     private func merge(local: WeekPlan?, remote: WeekPlan?) -> WeekPlan? {
+        // Last-writer-wins on the week envelope `updatedAt`. Each store dual-reads legacy or
+        // migrated CloudKit payloads and returns a legacy `WeekPlan` for the view models.
+        // Newer local migrated data is not overwritten by an older remote blob when `updatedAt`
+        // on the local week is newer (Task 004).
         switch (local, remote) {
         case (nil, nil):
             return nil

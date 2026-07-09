@@ -23,7 +23,7 @@ struct MigrationBaselineStep: MigrationStep {
   }
 }
 
-// MARK: - Task 004 stub (inactive until added to `MigrationRunner.defaultSteps`)
+// MARK: - Task 004
 
 struct MigrateWeekPlansAndWorkoutsStep: MigrationStep {
   let name = "Migrate week plans and workouts"
@@ -31,8 +31,7 @@ struct MigrateWeekPlansAndWorkoutsStep: MigrationStep {
 
   func migrate(from currentVersion: Int) throws {
     guard currentVersion < resultingVersion else { return }
-    // Task 004 will transform weekplan-*.json using LegacySessionMapper.
-    print("⏭️ \(name): no-op stub (Task 004).")
+    try WeekPlanMigration.migrateAllWeekPlanFiles()
   }
 }
 

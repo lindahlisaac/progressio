@@ -223,10 +223,13 @@ struct CloudWeekPlanStore: WeekPlanStore {
             }
             guard let data = record[CKFields.payload] as? Data else { return }
             do {
-                var decoded: WeekPlan = try decodePayload(data)
-                decoded.updatedAt = record[CKFields.updatedAt] as? Date ?? decoded.updatedAt
-                decoded.etag = record[CKFields.etag] as? String ?? decoded.etag
-                result = decoded
+                var migrated = try WeekPlanPersistence.decode(data)
+                migrated.updatedAt = record[CKFields.updatedAt] as? Date ?? migrated.updatedAt
+                migrated.etag = record[CKFields.etag] as? String ?? migrated.etag
+                var legacy = WeekPlanMapper.legacyWeekPlan(from: migrated)
+                legacy.updatedAt = migrated.updatedAt
+                legacy.etag = migrated.etag
+                result = legacy
             } catch {
                 print("Decode week failed: \(error)")
             }
@@ -239,9 +242,12 @@ struct CloudWeekPlanStore: WeekPlanStore {
         let recordID = makeRecordID(name: dateFormatter.string(from: start), type: CKRecordType.weekPlan)
         let record = CKRecord(recordType: CKRecordType.weekPlan, recordID: recordID)
         do {
-            record[CKFields.payload] = try encodePayload(week) as CKRecordValue
-            record[CKFields.updatedAt] = (week.updatedAt ?? Date()) as CKRecordValue
-            if let etag = week.etag { record[CKFields.etag] = etag as CKRecordValue }
+            var migrated = WeekPlanMapper.migratedWeekPlan(from: week)
+            migrated.updatedAt = week.updatedAt ?? Date()
+            migrated.etag = week.etag
+            record[CKFields.payload] = try encodePayload(migrated) as CKRecordValue
+            record[CKFields.updatedAt] = (migrated.updatedAt ?? Date()) as CKRecordValue
+            if let etag = migrated.etag { record[CKFields.etag] = etag as CKRecordValue }
             modify(records: [record])
         } catch {
             print("Encode week failed: \(error)")

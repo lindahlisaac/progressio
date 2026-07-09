@@ -17,9 +17,10 @@ final class MigrationRunner {
     self.versionFileURL = versionFileURL ?? StoragePaths.file(AppDataMigration.versionFileName)
   }
 
-  /// Active steps for the current release. Add 004–005 steps here when those tasks land.
+  /// Active migration steps for the current release.
   private static let defaultSteps: [MigrationStep] = [
     MigrationBaselineStep(),
+    MigrateWeekPlansAndWorkoutsStep(),
   ]
 
   /// Runs pending migrations on app launch. Safe to call multiple times.
