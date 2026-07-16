@@ -76,62 +76,83 @@ final class WeekPlannerViewModel: ObservableObject {
         self.currentStartOfWeek = startDate
     }
 
-    func addEnduranceSession(template: EnduranceTemplate, on date: Date) {
+    func addWorkout(
+        activityType: ActivityType,
+        on date: Date,
+        timePeriod: TimePeriod = .am,
+        title: String? = nil,
+        notes: String? = nil
+    ) {
         guard let dayIndex = dayIndex(for: date) else { return }
         weekPlan.days[dayIndex].workouts.append(
-            Workout.from(template: template, plannedDate: date)
-        )
-        persistWeek()
-    }
-
-    func addStrengthSession(template: StrengthTemplate, on date: Date) {
-        guard let dayIndex = dayIndex(for: date) else { return }
-        weekPlan.days[dayIndex].workouts.append(
-            Workout.from(template: template, plannedDate: date)
-        )
-        persistWeek()
-    }
-
-    func addStrengthSession(on date: Date, title: String = "Strength", note: String? = nil) {
-        guard let dayIndex = dayIndex(for: date) else { return }
-        weekPlan.days[dayIndex].workouts.append(
-            Workout.strength(plannedDate: date, title: title, notes: note)
-        )
-        persistWeek()
-    }
-
-    func addTemplateSession(template: StrengthTemplate, on date: Date) {
-        guard let dayIndex = dayIndex(for: date) else { return }
-        weekPlan.days[dayIndex].workouts.append(
-            Workout.from(template: template, plannedDate: date)
-        )
-        persistWeek()
-    }
-
-    func addRun(on date: Date, title: String = "Run", planned: Bool = true) {
-        guard let dayIndex = dayIndex(for: date) else { return }
-        weekPlan.days[dayIndex].workouts.append(
-            Workout.run(
+            Workout.manual(
+                activityType: activityType,
                 plannedDate: date,
+                timePeriod: timePeriod,
                 title: title,
-                imported: !planned,
-                notes: planned ? "Attach the detected HealthKit run" : "Logged from detected run"
+                notes: notes
             )
         )
         persistWeek()
     }
 
-    func addCycle(on date: Date, title: String = "Ride", planned: Bool = true) {
+    func addEnduranceSession(template: EnduranceTemplate, on date: Date, timePeriod: TimePeriod = .am) {
         guard let dayIndex = dayIndex(for: date) else { return }
         weekPlan.days[dayIndex].workouts.append(
-            Workout.ride(
-                plannedDate: date,
-                title: title,
-                imported: !planned,
-                notes: planned ? "Planned ride" : "Logged ride"
-            )
+            Workout.from(template: template, plannedDate: date, timePeriod: timePeriod)
         )
         persistWeek()
+    }
+
+    func addStrengthSession(template: StrengthTemplate, on date: Date, timePeriod: TimePeriod = .am) {
+        guard let dayIndex = dayIndex(for: date) else { return }
+        weekPlan.days[dayIndex].workouts.append(
+            Workout.from(template: template, plannedDate: date, timePeriod: timePeriod)
+        )
+        persistWeek()
+    }
+
+    func addStrengthSession(on date: Date, timePeriod: TimePeriod = .am, title: String = "Strength", note: String? = nil) {
+        addWorkout(activityType: .strength, on: date, timePeriod: timePeriod, title: title, notes: note)
+    }
+
+    func addTemplateSession(template: StrengthTemplate, on date: Date, timePeriod: TimePeriod = .am) {
+        addStrengthSession(template: template, on: date, timePeriod: timePeriod)
+    }
+
+    func addRun(on date: Date, timePeriod: TimePeriod = .am, title: String = "Road Run", planned: Bool = true) {
+        guard let dayIndex = dayIndex(for: date) else { return }
+        if planned {
+            weekPlan.days[dayIndex].workouts.append(
+                Workout.manual(activityType: .roadRun, plannedDate: date, timePeriod: timePeriod, title: title)
+            )
+        } else {
+            weekPlan.days[dayIndex].workouts.append(
+                Workout.run(
+                    plannedDate: date,
+                    timePeriod: timePeriod,
+                    title: title,
+                    imported: true,
+                    notes: "Logged from detected run"
+                )
+            )
+        }
+        persistWeek()
+    }
+
+    func addCycle(on date: Date, timePeriod: TimePeriod = .am, title: String = "Bike", planned: Bool = true) {
+        addWorkout(activityType: .bike, on: date, timePeriod: timePeriod, title: title, notes: planned ? nil : "Logged bike")
+    }
+
+    func setWorkoutTimePeriod(workoutID: UUID, timePeriod: TimePeriod) {
+        for dayIdx in weekPlan.days.indices {
+            if let workoutIndex = weekPlan.days[dayIdx].workouts.firstIndex(where: { $0.id == workoutID }) {
+                weekPlan.days[dayIdx].workouts[workoutIndex].timePeriod = timePeriod
+                weekPlan.days[dayIdx].workouts[workoutIndex].touchUpdatedAt()
+                persistWeek()
+                break
+            }
+        }
     }
 
     func saveWeeklyTemplate(name: String, note: String?, days: [DayTemplate]? = nil) {
@@ -218,7 +239,108 @@ final class WeekPlannerViewModel: ObservableObject {
 
     func removeWorkout(dayID: UUID, workoutID: UUID) {
         guard let dayIndex = weekPlan.days.firstIndex(where: { $0.id == dayID }) else { return }
-        weekPlan.days[dayIndex].workouts.removeAll { $0.id == workoutID }
+        guard let workoutIndex = weekPlan.days[dayIndex].workouts.firstIndex(where: { $0.id == workoutID }) else {
+            return
+        }
+        weekPlan.days[dayIndex].workouts[workoutIndex] = SyncMetadata.softDelete(
+            weekPlan.days[dayIndex].workouts[workoutIndex]
+        )
+        persistWeek()
+    }
+
+    /// Moves a workout to another day in the current week. Keeps the same workout ID.
+    @discardableResult
+    func moveWorkout(workoutID: UUID, toDate: Date) -> Bool {
+        guard let sourceDayIdx = weekPlan.days.firstIndex(where: { day in
+            day.workouts.contains(where: { $0.id == workoutID && !$0.metadata.isDeleted })
+        }) else { return false }
+        guard let workoutIdx = weekPlan.days[sourceDayIdx].workouts.firstIndex(where: { $0.id == workoutID }) else {
+            return false
+        }
+        guard let destDayIdx = dayIndex(for: toDate) else { return false }
+        if calendar.isDate(weekPlan.days[sourceDayIdx].date, inSameDayAs: toDate) {
+            return true
+        }
+
+        var workout = weekPlan.days[sourceDayIdx].workouts.remove(at: workoutIdx)
+        workout.plannedDate = calendar.startOfDay(for: toDate)
+        workout.touchUpdatedAt()
+        weekPlan.days[destDayIdx].workouts.append(workout)
+        persistWeek()
+        return true
+    }
+
+    func workoutRequiresMoveConfirmation(workoutID: UUID) -> Bool {
+        guard let workout = weekPlan.days.flatMap(\.activeWorkouts).first(where: { $0.id == workoutID }) else {
+            return false
+        }
+        return workout.hasCompletedEnduranceDetail
+            || workout.linkedHealthKitUUID != nil
+            || workout.status == .completed
+            || workout.status == .partiallyCompleted
+            || workout.completedValues.completedStrengthRoutineSnapshot != nil
+    }
+
+    // MARK: - Clipboard (copy / paste)
+
+    struct WorkoutClipboard {
+        let source: Workout
+    }
+
+    @Published private(set) var workoutClipboard: WorkoutClipboard?
+
+    func copyWorkout(workoutID: UUID) {
+        guard let workout = weekPlan.days.flatMap(\.activeWorkouts).first(where: { $0.id == workoutID }) else {
+            return
+        }
+        workoutClipboard = WorkoutClipboard(source: workout)
+    }
+
+    enum PasteMode {
+        case plannedOnly
+        case plannedAndCompleted
+    }
+
+    func pasteWorkout(on date: Date, mode: PasteMode) {
+        guard let clipboard = workoutClipboard else { return }
+        guard let dayIndex = dayIndex(for: date) else { return }
+        let source = clipboard.source
+
+        var planned = source.plannedValues
+        var completed = CompletedValues.empty
+        var status: WorkoutStatus = .planned
+        var linkedHealthKitUUID: String? = nil
+        var skipReason: String? = nil
+
+        if mode == .plannedAndCompleted {
+            completed = source.completedValues
+            status = source.status == .skipped ? .planned : source.status
+            linkedHealthKitUUID = source.linkedHealthKitUUID
+            if source.status == .skipped {
+                skipReason = nil
+            }
+        }
+
+        let copy = Workout(
+            id: UUID(),
+            plannedDate: calendar.startOfDay(for: date),
+            timePeriod: source.timePeriod,
+            title: source.title,
+            activityType: source.activityType,
+            runType: source.runType,
+            plannedValues: planned,
+            completedValues: completed,
+            status: status,
+            source: source.source == .appleHealth && mode == .plannedAndCompleted ? .appleHealth : .manual,
+            linkedWorkoutTemplateId: source.linkedWorkoutTemplateId,
+            linkedWeeklyTemplateId: nil,
+            linkedPeriodizedBlockId: nil,
+            linkedHealthKitUUID: linkedHealthKitUUID,
+            templateName: source.templateName,
+            notes: source.notes,
+            skipReason: skipReason
+        )
+        weekPlan.days[dayIndex].workouts.append(copy)
         persistWeek()
     }
 
@@ -277,7 +399,8 @@ final class WeekPlannerViewModel: ObservableObject {
         status: WorkoutStatus,
         actualDistance: String? = nil,
         actualDuration: String? = nil,
-        actualElevation: String? = nil
+        actualElevation: String? = nil,
+        timePeriod: TimePeriod? = nil
     ) {
         for dayIdx in weekPlan.days.indices {
             if let workoutIndex = weekPlan.days[dayIdx].workouts.firstIndex(where: { $0.id == workoutID }) {
@@ -291,7 +414,8 @@ final class WeekPlannerViewModel: ObservableObject {
                     actualDistance: actualDistance,
                     actualDuration: actualDuration,
                     actualElevation: actualElevation,
-                    status: status
+                    status: status,
+                    timePeriod: timePeriod
                 )
                 persistWeek()
                 break

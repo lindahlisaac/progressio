@@ -11,10 +11,13 @@ struct StrengthLogView: View {
     @State private var isLocked: Bool
     @State private var isCompleted: Bool
     @State private var note: String
+    @State private var timePeriod: TimePeriod
     private let storageURL: URL
     @Environment(\.scenePhase) private var scenePhase
     private let onCompleteStatus: (() -> Void)?
     private let onUnlockStatus: (() -> Void)?
+    private let onCompletedSnapshotPersist: ((StrengthRoutineSnapshot) -> Void)?
+    private let onTimePeriodChange: ((TimePeriod) -> Void)?
     @State private var showingResetConfirm = false
 
     private struct ExerciseSection: View {
@@ -64,13 +67,15 @@ struct StrengthLogView: View {
         onNoteChange: ((String) -> Void)? = nil,
         onCompleteStatus: (() -> Void)? = nil,
         onUnlockStatus: (() -> Void)? = nil,
-        onCompletedSnapshotPersist: ((StrengthRoutineSnapshot) -> Void)? = nil
+        onCompletedSnapshotPersist: ((StrengthRoutineSnapshot) -> Void)? = nil,
+        onTimePeriodChange: ((TimePeriod) -> Void)? = nil
     ) {
         self.workout = workout
         self.onNoteChange = onNoteChange
         self.onCompleteStatus = onCompleteStatus
         self.onUnlockStatus = onUnlockStatus
         self.onCompletedSnapshotPersist = onCompletedSnapshotPersist
+        self.onTimePeriodChange = onTimePeriodChange
         self.storageURL = StrengthLogPersistence.strengthLogURL(for: workout.id)
 
         let seededFromSnapshot = Self.seedExercises(from: workout)
@@ -89,9 +94,8 @@ struct StrengthLogView: View {
             _isLocked = State(initialValue: completed)
             _note = State(initialValue: workout.notes ?? "")
         }
+        _timePeriod = State(initialValue: workout.timePeriod)
     }
-
-    private let onCompletedSnapshotPersist: ((StrengthRoutineSnapshot) -> Void)?
 
     private static func seedExercises(from workout: Workout) -> [ExerciseLog] {
         if let completed = workout.completedValues.completedStrengthRoutineSnapshot {
@@ -105,6 +109,17 @@ struct StrengthLogView: View {
 
     var body: some View {
         List {
+            Section("Schedule") {
+                Picker("Time of day", selection: $timePeriod) {
+                    ForEach(TimePeriod.allCases) { period in
+                        Text(period.rawValue).tag(period)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: timePeriod) { newValue in
+                    onTimePeriodChange?(newValue)
+                }
+            }
             Section("Description") {
                 TextEditor(text: $note)
                     .frame(minHeight: 100)

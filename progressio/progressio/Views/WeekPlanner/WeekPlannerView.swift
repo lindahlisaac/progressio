@@ -6,6 +6,8 @@ struct WeekPlannerView: View {
     @ObservedObject var templatesViewModel: TemplateLibraryViewModel
     @State private var showingTemplatePicker = false
     @State private var templatePickerDate: Date?
+    @State private var templatePickerActivityType: ActivityType?
+    @State private var templatePickerTimePeriod: TimePeriod = .am
     @State private var hasStartedHKObserver = false
     @State private var previousUnattachedCount: Int = 0
     @State private var showingUnattachedSheet = false
@@ -18,11 +20,16 @@ struct WeekPlannerView: View {
     @State private var showingSkipSheet = false
     @State private var skipNote: String = ""
     @State private var skipSessionID: UUID?
+    @State private var pendingMoveWorkoutID: UUID?
+    @State private var pendingMoveDate: Date?
+    @State private var showingMoveConfirm = false
+    @State private var pasteTargetDate: Date?
+    @State private var showingPasteModeAlert = false
 
     var body: some View {
         List {
             unattachedRunsSection
-            weeklyReportSection
+            weeklyTotalsSection
             daysSection
         }
         .navigationTitle("This Week")
@@ -74,70 +81,7 @@ struct WeekPlannerView: View {
             previousUnattachedCount = newCount
         }
         .sheet(isPresented: $showingTemplatePicker) {
-            NavigationStack {
-                List {
-                    if !templatesViewModel.activeTemplates.isEmpty {
-                        Section("Strength") {
-                            ForEach(templatesViewModel.activeTemplates) { template in
-                                Button {
-                                    if let date = templatePickerDate {
-                                        viewModel.addTemplateSession(template: template, on: date)
-                                    }
-                                    showingTemplatePicker = false
-                                } label: {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(template.name)
-                                            .font(.body.weight(.semibold))
-                                        if let note = template.note {
-                                            Text(note)
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if !templatesViewModel.activeEnduranceTemplates.isEmpty {
-                        Section("Endurance") {
-                            ForEach(templatesViewModel.activeEnduranceTemplates) { template in
-                                Button {
-                                    if let date = templatePickerDate {
-                                        viewModel.addEnduranceSession(template: template, on: date)
-                                    }
-                                    showingTemplatePicker = false
-                                } label: {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(template.name)
-                                            .font(.body.weight(.semibold))
-                                        HStack {
-                                            Text(template.activityType.rawValue)
-                                            if let runType = template.runType {
-                                                Text("• \(runType.rawValue)")
-                                            }
-                                        }
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        if let distance = template.plannedDistance, !distance.isEmpty {
-                                            Text("Distance: \(distance)")
-                                                .font(.caption2)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                .navigationTitle("Select template")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") {
-                            showingTemplatePicker = false
-                        }
-                    }
-                }
-            }
+            modalityTemplatePickerSheet
         }
         .sheet(isPresented: $showingUnattachedSheet) {
             NavigationStack {
@@ -280,6 +224,40 @@ struct WeekPlannerView: View {
                 Text("This will apply '\(template.name)' to the current week.")
             }
         }
+        .alert("Move workout?", isPresented: $showingMoveConfirm) {
+            Button("Move") {
+                if let id = pendingMoveWorkoutID, let date = pendingMoveDate {
+                    _ = viewModel.moveWorkout(workoutID: id, toDate: date)
+                }
+                pendingMoveWorkoutID = nil
+                pendingMoveDate = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingMoveWorkoutID = nil
+                pendingMoveDate = nil
+            }
+        } message: {
+            Text("This workout has completed or HealthKit data. Move it to the new day?")
+        }
+        .alert("Paste workout", isPresented: $showingPasteModeAlert) {
+            Button("Planned only") {
+                if let date = pasteTargetDate {
+                    viewModel.pasteWorkout(on: date, mode: .plannedOnly)
+                }
+                pasteTargetDate = nil
+            }
+            Button("Planned + completed") {
+                if let date = pasteTargetDate {
+                    viewModel.pasteWorkout(on: date, mode: .plannedAndCompleted)
+                }
+                pasteTargetDate = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pasteTargetDate = nil
+            }
+        } message: {
+            Text("Include completed values from the copied workout?")
+        }
     }
 
     private var unattachedRunsSection: some View {
@@ -315,36 +293,37 @@ struct WeekPlannerView: View {
         }
     }
 
-    private var weeklyReportSection: some View {
-        NavigationLink {
-            WeeklyReportView(
-                plannedRunMiles: plannedRunMiles,
-                completedRunMiles: completedRunMiles,
-                plannedRideMiles: plannedRideMiles,
-                completedRideMiles: completedRideMiles,
-                plannedStrengthCount: plannedStrengthCount,
-                completedStrengthCount: completedStrengthCount
-            )
-        } label: {
-            HStack {
-                Label("Weekly report", systemImage: "chart.bar.doc.horizontal")
-                Spacer()
-                VStack(alignment: .trailing, spacing: 4) {
-                    Text(String(format: "Run %.1f/%.1f mi", completedRunMiles, plannedRunMiles))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(String(format: "Ride %.1f/%.1f mi", completedRideMiles, plannedRideMiles))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("Strength \(completedStrengthCount)/\(plannedStrengthCount)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Image(systemName: "chevron.right")
+    private var weeklyTotalsSection: some View {
+        let totals = WeekTotals.modalityTotals(for: viewModel.weekPlan)
+        return Section {
+            if totals.isEmpty {
+                Text("No workouts this week")
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
+            } else {
+                ForEach(totals) { total in
+                    HStack {
+                        Label(total.activityType.rawValue, systemImage: total.activityType.systemImage)
+                        Spacer()
+                        Text("\(formatTotal(total.completedAmount, strength: total.activityType == .strength)) / \(formatTotal(total.plannedAmount, strength: total.activityType == .strength)) \(total.unitLabel)")
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
-            .padding(.vertical, 4)
+        } header: {
+            Text("Weekly totals")
         }
+    }
+
+    private func formatTotal(_ value: Double, strength: Bool) -> String {
+        if strength {
+            return String(Int(value.rounded()))
+        }
+        if value == value.rounded() {
+            return String(Int(value.rounded()))
+        }
+        return String(format: "%.1f", value)
     }
 
     private var daysSection: some View {
@@ -370,44 +349,90 @@ struct WeekPlannerView: View {
                             onDelete: { viewModel.removeWorkout(dayID: day.id, workoutID: workout.id) },
                             onSkip: {
                                 skipSessionID = workout.id
-                                skipNote = workout.displayNote ?? ""
+                                skipNote = workout.status == .skipped ? (workout.skipReason ?? "") : ""
                                 showingSkipSheet = true
                             },
                             showsDisclosure: true
                         )
                     }
                     .buttonStyle(.plain)
+                    .draggable(workout.id.uuidString)
+                    .contextMenu {
+                        Button {
+                            viewModel.copyWorkout(workoutID: workout.id)
+                        } label: {
+                            Label("Copy", systemImage: "doc.on.doc")
+                        }
+                    }
+                }
+            }
+
+            if viewModel.workoutClipboard != nil {
+                Button {
+                    pasteTargetDate = day.date
+                    showingPasteModeAlert = true
+                } label: {
+                    Label("Paste workout", systemImage: "doc.on.clipboard")
                 }
             }
 
             Menu("Add workout") {
-                Button {
-                    viewModel.addRun(on: day.date, title: "Run", planned: true)
-                } label: {
-                    Label("Run", systemImage: SessionKind.run.systemImage)
+                ForEach(ActivityType.plannerAddTypes) { activityType in
+                    Menu {
+                        Menu("Blank") {
+                            Button("AM") {
+                                viewModel.addWorkout(
+                                    activityType: activityType,
+                                    on: day.date,
+                                    timePeriod: .am
+                                )
+                            }
+                            Button("PM") {
+                                viewModel.addWorkout(
+                                    activityType: activityType,
+                                    on: day.date,
+                                    timePeriod: .pm
+                                )
+                            }
+                        }
+                        if hasTemplates(for: activityType) {
+                            Menu("From template") {
+                                Button("AM") {
+                                    openTemplatePicker(for: activityType, on: day.date, timePeriod: .am)
+                                }
+                                Button("PM") {
+                                    openTemplatePicker(for: activityType, on: day.date, timePeriod: .pm)
+                                }
+                            }
+                        }
+                    } label: {
+                        Label(activityType.rawValue, systemImage: activityType.systemImage)
+                    }
                 }
-                Button {
-                    viewModel.addCycle(on: day.date, title: "Ride", planned: true)
-                } label: {
-                    Label("Ride", systemImage: SessionKind.cycle.systemImage)
-                }
-                Button {
-                    viewModel.addStrengthSession(on: day.date, title: "Strength")
-                } label: {
-                    Label("Strength", systemImage: SessionKind.strength.systemImage)
-                }
-                Button {
-                    viewModel.addRun(on: day.date, title: "Detected run", planned: false)
-                } label: {
-                    Label("Attach detected run", systemImage: "bolt.heart")
-                }
-                Button {
-                    templatePickerDate = day.date
-                    showingTemplatePicker = true
-                } label: {
-                    Label("Add from template", systemImage: "doc.on.doc")
+                if !viewModel.activeUnattachedRuns.isEmpty {
+                    Divider()
+                    Button {
+                        viewModel.addRun(on: day.date, title: "Detected run", planned: false)
+                    } label: {
+                        Label("Attach detected run", systemImage: "bolt.heart")
+                    }
                 }
             }
+        }
+        .dropDestination(for: String.self) { items, _ in
+            guard let raw = items.first, let workoutID = UUID(uuidString: raw) else { return false }
+            requestMove(workoutID: workoutID, to: day.date)
+            return true
+        }
+    }
+
+    private func requestMove(workoutID: UUID, to date: Date) {
+        if viewModel.workoutRequiresMoveConfirmation(workoutID: workoutID) {
+            pendingMoveWorkoutID = workoutID
+            pendingMoveDate = date
+            showingMoveConfirm = true
+        } else {
+            _ = viewModel.moveWorkout(workoutID: workoutID, toDate: date)
         }
     }
 
@@ -427,12 +452,15 @@ struct WeekPlannerView: View {
                 },
                 onCompletedSnapshotPersist: { snapshot in
                     viewModel.updateCompletedStrengthSnapshot(workoutID: workout.id, snapshot: snapshot)
+                },
+                onTimePeriodChange: { period in
+                    viewModel.setWorkoutTimePeriod(workoutID: workout.id, timePeriod: period)
                 }
             )
         } else if workout.activityType.sessionKind == .run {
             RunDetailView(
                 workout: workout,
-                onSave: { title, category, plannedDistance, plannedDuration, plannedElevation, status, actualDistance, actualDuration, actualElevation in
+                onSave: { title, category, plannedDistance, plannedDuration, plannedElevation, status, actualDistance, actualDuration, actualElevation, timePeriod in
                     viewModel.updateEnduranceWorkout(
                         workoutID: workout.id,
                         title: title,
@@ -443,14 +471,15 @@ struct WeekPlannerView: View {
                         status: status,
                         actualDistance: actualDistance,
                         actualDuration: actualDuration,
-                        actualElevation: actualElevation
+                        actualElevation: actualElevation,
+                        timePeriod: timePeriod
                     )
                 }
             )
         } else {
             RideDetailView(
                 workout: workout,
-                onSave: { title, _, plannedDistance, plannedDuration, plannedElevation, status, actualDistance, actualDuration, actualElevation in
+                onSave: { title, _, plannedDistance, plannedDuration, plannedElevation, status, actualDistance, actualDuration, actualElevation, timePeriod in
                     viewModel.updateEnduranceWorkout(
                         workoutID: workout.id,
                         title: title,
@@ -461,72 +490,110 @@ struct WeekPlannerView: View {
                         status: status,
                         actualDistance: actualDistance,
                         actualDuration: actualDuration,
-                        actualElevation: actualElevation
+                        actualElevation: actualElevation,
+                        timePeriod: timePeriod
                     )
                 }
             )
         }
     }
 
+    private func hasTemplates(for activityType: ActivityType) -> Bool {
+        if activityType == .strength {
+            return !templatesViewModel.activeTemplates.isEmpty
+        }
+        return templatesViewModel.activeEnduranceTemplates.contains { $0.activityType == activityType }
+    }
+
+    private func openTemplatePicker(for activityType: ActivityType, on date: Date, timePeriod: TimePeriod) {
+        templatePickerDate = date
+        templatePickerActivityType = activityType
+        templatePickerTimePeriod = timePeriod
+        showingTemplatePicker = true
+    }
+
+    @ViewBuilder
+    private var modalityTemplatePickerSheet: some View {
+        NavigationStack {
+            List {
+                if templatePickerActivityType == .strength {
+                    ForEach(templatesViewModel.activeTemplates) { template in
+                        Button {
+                            if let date = templatePickerDate {
+                                viewModel.addStrengthSession(
+                                    template: template,
+                                    on: date,
+                                    timePeriod: templatePickerTimePeriod
+                                )
+                            }
+                            showingTemplatePicker = false
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(template.name)
+                                    .font(.body.weight(.semibold))
+                                if let note = template.note {
+                                    Text(note)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                } else if let activityType = templatePickerActivityType {
+                    ForEach(templatesViewModel.activeEnduranceTemplates.filter { $0.activityType == activityType }) { template in
+                        Button {
+                            if let date = templatePickerDate {
+                                viewModel.addEnduranceSession(
+                                    template: template,
+                                    on: date,
+                                    timePeriod: templatePickerTimePeriod
+                                )
+                            }
+                            showingTemplatePicker = false
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(template.name)
+                                    .font(.body.weight(.semibold))
+                                HStack {
+                                    Text(template.activityType.rawValue)
+                                    if let runType = template.runType {
+                                        Text("• \(runType.rawValue)")
+                                    }
+                                }
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                if let distance = template.plannedDistance, !distance.isEmpty {
+                                    Text("Distance: \(distance)")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle(templatePickerTitle)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        showingTemplatePicker = false
+                    }
+                }
+            }
+        }
+    }
+
+    private var templatePickerTitle: String {
+        if let activityType = templatePickerActivityType {
+            return "\(activityType.rawValue) Templates"
+        }
+        return "Select template"
+    }
+
     private func dayHeader(for date: Date) -> String {
         let dayString = dayFormatter.string(from: date)
         let short = shortDayFormatter.string(from: date)
         return "\(short) • \(dayString)"
-    }
-
-    private var plannedRunMiles: Double {
-        let workouts = viewModel.weekPlan.days.flatMap { $0.activeWorkouts }
-        let runs = workouts.filter { $0.activityType.sessionKind == .run }
-        return runs.reduce(0.0) { partial, workout in
-            partial + miles(from: workout.plannedDistance)
-        }
-    }
-
-    private var completedRunMiles: Double {
-        let workouts = viewModel.weekPlan.days.flatMap { $0.activeWorkouts }
-        let runs = workouts.filter { $0.activityType.sessionKind == .run && ($0.status == .completed || $0.status == .partiallyCompleted) }
-        return runs.reduce(0.0) { partial, workout in
-            let distance = workout.actualDistance.isEmpty ? workout.plannedDistance : workout.actualDistance
-            return partial + miles(from: distance)
-        }
-    }
-
-    private var plannedRideMiles: Double {
-        let workouts = viewModel.weekPlan.days.flatMap { $0.activeWorkouts }
-        let rides = workouts.filter { $0.activityType == .bike }
-        return rides.reduce(0.0) { partial, workout in
-            partial + miles(from: workout.plannedDistance)
-        }
-    }
-
-    private var completedRideMiles: Double {
-        let workouts = viewModel.weekPlan.days.flatMap { $0.activeWorkouts }
-        let rides = workouts.filter { $0.activityType == .bike && ($0.status == .completed || $0.status == .partiallyCompleted) }
-        return rides.reduce(0.0) { partial, workout in
-            let distance = workout.actualDistance.isEmpty ? workout.plannedDistance : workout.actualDistance
-            return partial + miles(from: distance)
-        }
-    }
-
-    private var plannedStrengthCount: Int {
-        viewModel.weekPlan.days.flatMap { $0.activeWorkouts }.filter { $0.activityType == .strength }.count
-    }
-
-    private var completedStrengthCount: Int {
-        var count = 0
-        for workout in viewModel.weekPlan.days.flatMap({ $0.activeWorkouts }) {
-            if workout.activityType == .strength,
-               workout.status == .completed || workout.status == .partiallyCompleted {
-                count += 1
-            }
-        }
-        return count
-    }
-
-    private func miles(from distanceString: String) -> Double {
-        guard !distanceString.isEmpty else { return 0 }
-        let filtered = distanceString.filter { "0123456789.".contains($0) }
-        return Double(filtered) ?? 0
     }
 
     private func startHealthKitObserverIfNeeded() {
@@ -576,27 +643,46 @@ struct WorkoutRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: workout.sessionKind.systemImage)
+            Image(systemName: workout.activityType.systemImage)
                 .foregroundStyle(color(for: workout.sessionKind))
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(workout.title)
-                    .font(.headline)
+                HStack(spacing: 6) {
+                    Text(workout.title)
+                        .font(.headline)
+                        .strikethrough(workout.status == .skipped, color: .secondary)
+                        .foregroundStyle(workout.status == .skipped ? .secondary : .primary)
+                    Text(workout.timePeriod.rawValue)
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.15))
+                        .clipShape(Capsule())
+                }
+                Text(workout.activityType.rawValue)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                if workout.status == .skipped, let reason = workout.skipReason,
+                   !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(truncated(reason, limit: 60))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .italic()
+                }
                 enduranceSummary
                 strengthSummary
             }
 
             Spacer(minLength: 8)
 
-            HStack(spacing: 6) {
-                Text(workout.status.rawValue)
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(workout.status.tint.opacity(0.15))
-                    .foregroundStyle(workout.status.tint)
-                    .clipShape(Capsule())
-            }
+            Text(workout.status.badgeLabel)
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(workout.status.tint.opacity(0.15))
+                .foregroundStyle(workout.status.tint)
+                .clipShape(Capsule())
+                .accessibilityLabel(workout.status.rawValue)
         }
         .contentShape(Rectangle())
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
@@ -653,7 +739,7 @@ struct WorkoutRow: View {
         if workout.activityType.sessionKind == .run, let cat = workout.runType?.runCategory {
             chip(text: cat.rawValue, color: .blue)
         } else if workout.activityType == .bike {
-            chip(text: "Ride", color: .orange)
+            chip(text: "Bike", color: .orange)
         }
     }
 
@@ -665,7 +751,8 @@ struct WorkoutRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            if let note = workout.displayNote {
+            if workout.status != .skipped, let note = workout.notes,
+               !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text(truncated(note, limit: 60))
                     .font(.caption)
                     .foregroundStyle(.secondary)

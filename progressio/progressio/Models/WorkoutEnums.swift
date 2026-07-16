@@ -8,6 +8,20 @@ enum ActivityType: String, Codable, CaseIterable, Identifiable {
     case strength = "Strength"
 
     var id: String { rawValue }
+
+    /// Modalities offered in the planner add-workout flow.
+    static let plannerAddTypes: [ActivityType] = [.roadRun, .trailRun, .walk, .bike, .strength]
+
+    var systemImage: String {
+        switch self {
+        case .roadRun, .trailRun: return "figure.run"
+        case .walk: return "figure.walk"
+        case .bike: return "bicycle"
+        case .strength: return "dumbbell"
+        }
+    }
+
+    var defaultTitle: String { rawValue }
 }
 
 enum WorkoutStatus: String, Codable, CaseIterable {

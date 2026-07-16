@@ -279,17 +279,27 @@ Aligned with `tasks/README.md` ordering:
 
 ## Task Completion Notes
 
+For each completed task, record **what shipped** and a **Major decisions** subsection (why those code choices were made). Agents must update both when finishing a task.
+
 ### Task 002 — Workout Types and Metadata
 
 - Added target types under `Models/`: `Workout`, `WorkoutEnums`, `WorkoutValues`, `WorkoutSchema`, `LegacySessionMapper`.
 - Legacy `PlannedSession` / stores / UI unchanged until Task 007.
 - `LegacySessionMapperTests` in `progressioTests/`.
 
+**Major decisions**
+- Introduced new types alongside legacy instead of in-place rewrite, so planner/UI could keep shipping while migrations caught up.
+- Kept `LegacySessionMapper` as the explicit bridge (lossy round-trips documented) rather than pretending one model covered both eras.
+
 ### Task 003 — Migration Infrastructure
 
 - `Services/Migration/`: `MigrationRunner`, `MigrationStep`, `AppDataMigration`, `LegacyDataDecoder`, `MigrationBackup`.
 - Runs on launch via `progressioApp.init()`; persists `Documents/progressio/dataVersion.json`.
 - `latestVersion` advances only as migration steps ship (avoid no-op stubs bumping version).
+
+**Major decisions**
+- Version gate is app-data-wide (`dataVersion.json`), separate from per-record `schemaVersion`.
+- Steps are strictly sequential (`currentVersion + 1` only) so partial upgrades are recoverable and auditable.
 
 ### Task 004 — Migrate Week Plans and Workouts
 
@@ -299,6 +309,10 @@ Aligned with `tasks/README.md` ordering:
 - `SyncingWeekPlanStore` merge comment documents LWW + dual-read policy.
 - App data version **v2** after week-plan migration.
 
+**Major decisions**
+- Dual-read + write-forward: old week JSON still loads; every save writes migrated shape.
+- Backup before rewrite so a bad migration is recoverable without CloudKit archaeology.
+
 ### Task 005 — Migrate Templates and Strength Logs
 
 - **Model metadata** added to `StrengthTemplate`, `WeeklyTemplate`, `DayTemplate`, `StrengthLogState`:
@@ -307,6 +321,10 @@ Aligned with `tasks/README.md` ordering:
 - **On launch (v3 step)**: backs up and stamps `templates.json`, `weeklyTemplates.json`, `strengthlog-*.json`; optionally embeds strength log snapshots into matching `Workout.completedValues` in migrated week plans (by session UUID).
 - **Stores / UI**: `FileTemplateStore` / `FileWeeklyTemplateStore` use `TemplatePersistence`; `StrengthLogView` uses `StrengthLogPersistence`.
 - **Still legacy**: weekly template days embed `[PlannedSession]` (snapshot fix is Task 010); strength logs remain local files (CloudKit sync is Task 021).
+
+**Major decisions**
+- Stamp metadata in place rather than inventing new template file formats yet (format splits deferred to 009/010).
+- Embed completed strength snapshots into week workouts when UUID matches; leave file-backed logs as source of truth until Task 021.
 
 ### Task 006 — Sync Metadata and Soft Deletes
 
@@ -319,6 +337,10 @@ Aligned with `tasks/README.md` ordering:
 - **Follow-up fix** — `SyncRecordMerge.pick` corrected so newer active records win over older tombstones; resurrection still blocked when active is newer than an existing tombstone (`SyncRecordMergeTests`).
 - **Known gaps (acceptable for 006)**: planner `removeSession` still hard-deletes sessions (workout-level soft delete is Task 007+); CloudKit orphan record cleanup deferred; strength logs still local-only (Task 021).
 
+**Major decisions**
+- Soft deletes keep tombstones in payloads so CloudKit merge can propagate deletes across devices.
+- Merge policy prefers newer active over older tombstone, but blocks resurrection when tombstone is newer — encoded in tests after an early bug.
+
 ### Task 007 — Wire View Models to Workout Model
 
 - **`DayPlan`** — `sessions: [PlannedSession]` replaced with `workouts: [Workout]`; decoder accepts legacy `sessions` key for import/export compatibility.
@@ -328,6 +350,10 @@ Aligned with `tasks/README.md` ordering:
 - **Planner views** — `WeekPlannerView`, `RunDetailView`, `RideDetailView`, `StrengthLogView`, `UnattachedRunsView` take `Workout`; `WorkoutRow` replaces `SessionRow`.
 - **Still legacy at template boundary**: `DayTemplate.sessions` remains `[PlannedSession]` until Task 010; weekly template apply converts via `LegacySessionMapper`.
 
+**Major decisions**
+- Switched planner domain to `Workout` at the `DayPlan` boundary first; left weekly templates on `PlannedSession` to avoid coupling Task 007 to Task 010.
+- Kept legacy `sessions` decode path so export/import and older week JSON still work without a second migration.
+
 ### Task 008 — Template Snapshot on Apply
 
 - **`TemplateSnapshot.swift`** — copies `StrengthTemplate` exercises into `StrengthRoutineSnapshot`; maps snapshots ↔ `ExerciseLog` for UI seeding and completion.
@@ -336,14 +362,24 @@ Aligned with `tasks/README.md` ordering:
 - **`WeekPlannerView`** — removed `templatesViewModel` template-by-name lookup for strength detail navigation.
 - **Still legacy**: weekly template apply (Task 010); strength logs remain file-backed with snapshot sync on complete (full CloudKit sync is Task 021).
 
+**Major decisions**
+- Canonical link is `linkedWorkoutTemplateId`; `templateName` kept as display-only metadata.
+- Snapshot lives on the workout (`plannedValues` / `completedValues`); strength UI still persists mid-session edits to local files so Task 021 can migrate completion sync later without blocking independence.
+
 ### Task 009 — Endurance Template Model Split
 
 - **`EnduranceTemplate.swift`** — dedicated model with activity type, run type, planned distance/duration/elevation, description, RPE, route; sync metadata.
-- **Migration v4** — `EnduranceTemplateMigration` moves `StrengthTemplate` where `category == .run` into `enduranceTemplates.json`, preserving IDs; strength-only records remain in `templates.json`.
+- **Migration v4** — `EnduranceTemplateMigration` moves legacy non-strength (`TemplateCategory.endurance`, including old `"Run"`) into `enduranceTemplates.json`, preserving IDs; strength-only records remain in `templates.json`.
 - **Stores** — `EnduranceTemplateStore`, file/CloudKit/syncing wrappers parallel to strength templates.
 - **`Workout.from(template: EnduranceTemplate)`** — copies planned values into independent workout snapshot on apply.
 - **`TemplateLibraryViewModel`** — manages strength and endurance templates separately; `RunCategory.longRun` added with full `RunType` bridge.
 - **UI** — Templates library, planner template picker, and weekly template picker use `EnduranceTemplate` for endurance; strength templates unchanged.
+- **Follow-up** — `TemplateCategory` renamed conceptually to Strength / Endurance (`case endurance = "Endurance"`); legacy JSON `"Run"` still decodes as `.endurance`.
+
+**Major decisions**
+- Separate file + CloudKit record type (`enduranceTemplates.json` / `EnduranceTemplate`) instead of a discriminated union in one array — clearer store boundaries and avoids rewriting all strength sync paths.
+- Preserve legacy template UUIDs on migrate so existing `linkedWorkoutTemplateId` references stay valid.
+- Activity type (road/trail/walk/bike) is a field on `EnduranceTemplate`, not a top-level template category; category is only Strength vs Endurance.
 
 ### Task 010 — Weekly Template Snapshot on Apply
 
@@ -353,10 +389,79 @@ Aligned with `tasks/README.md` ordering:
 - **`saveWeeklyTemplate`** — stores snapshots from active workouts, not live references.
 - **Migration v5** — rewrites `weeklyTemplates.json` from legacy sessions to workout entry snapshots.
 - **UI** — weekly template create/edit/detail and planner list use `workoutEntries`; planner day list filters via `DayPlan.activeWorkouts`.
+- **Follow-up UX** — planner toolbar menu for Apply Weekly Template vs Save Week as Template.
 
-### Next up — Task 011
+**Major decisions**
+- Store planned-only entries in the template (no completed values) so templates stay blueprints.
+- Apply always allocates new workout IDs; overwrite soft-deletes prior active workouts instead of hard-removing, to keep sync tombstones consistent with Task 006.
+- `DayPlan.activeWorkouts` filters deleted workouts in UI/totals without dropping tombstones from persistence.
 
-- Planner activity types and add flow.
+### Task 011 — Planner Activity Types and Add Flow
+
+- **Add menu** — modality-first: Road Run, Trail Run, Walk, Bike, Strength; each offers Blank AM/PM and From template AM/PM when templates exist for that modality.
+- **`Workout.manual` / `from(template:timePeriod:)`** — create with correct `ActivityType`, `source`, and `timePeriod` (default AM).
+- **Template picker** — filtered by selected modality (strength vs matching endurance activity type).
+- **AM/PM** — set on add; editable in `RunDetailView`, `RideDetailView` (Bike), and `StrengthLogView`; shown on `WorkoutRow`.
+- User-facing "Ride" → "Bike" in planner add/detail strings.
+
+**Major decisions**
+- Nested menus (modality → blank/template → AM/PM) instead of a multi-step sheet — fewer screens, matches “minimal taps” in PlannerUX.
+- Template picker is modality-scoped (exact `activityType` for endurance) so a Trail Run template is not offered under Road Run.
+- Default `timePeriod` to AM when unset so Apple Health matching (Task 020) has a stable baseline.
+- Kept `RideDetailView` type name; only user-facing strings say Bike, to avoid a large rename churn for Task 011.
+
+### Task 012 — Planner Status Indicators
+
+- Distinct `WorkoutStatus.tint` values: Planned blue, Done green, Partial teal, Imported orange, Skipped gray.
+- Compact `badgeLabel` on rows (`Partial` / `Done` instead of full enum strings).
+- Skipped: title struck through + skip reason shown; strength notes no longer duplicate skip reason via `displayNote`.
+
+**Major decisions**
+- Kept single capsule badge pattern; differentiated Partial with a teal tint rather than a second badge to stay minimal.
+- Skip reason is row-level text (italic), not a chip — avoids competing with status/time-period capsules.
+- **Follow-up:** skip sheet prefills `skipReason` only when already skipped (not `notes` / “From template”).
+
+### Task 013 — Weekly Totals
+
+- **`WeekTotals.swift`** — per-modality completed/planned helper; rows only for activity types present in the week.
+- Inline “Weekly totals” section at top of planner; skipped → planned only; completed + partial → completed.
+- Bike uses miles when any distance exists, otherwise duration hours.
+- `WeeklyReportView` aligned to same totals model (optional detail retained conceptually).
+
+**Major decisions**
+- Extracted totals out of the view into a pure helper so drag/paste refresh without duplicating math.
+- Modality-split (road vs trail vs walk) instead of lumping all runs — matches PlannerUX.
+- **Follow-up:** `WeekTotalsTests` covers skip/planned, soft-delete exclusion, bike duration fallback, modality filtering.
+
+### Task 014 — Drag Workouts Between Days
+
+- `.draggable` workout UUID + section `.dropDestination`.
+- `moveWorkout` keeps ID, updates `plannedDate` / day membership.
+- Confirmation when completed values, partial/completed status, strength completion snapshot, or HealthKit UUID present.
+
+**Major decisions**
+- Transfer payload is UUID string (simple, List-friendly) rather than a custom `Transferable` workout payload.
+- Confirm only for data-bearing workouts; planned blanks move immediately.
+- **Follow-up:** `removeWorkout` soft-deletes (tombstone) instead of hard-removing from the day array.
+
+- Context menu Copy; “Paste workout” button on days when clipboard is set.
+- Prompt: planned-only vs planned+completed; always new UUID; clears weekly-template link; planned-only clears HK UUID and completed values.
+
+**Major decisions**
+- In-app VM clipboard (not UIPasteboard) so paste stays inside the planner and doesn’t collide with system paste.
+- Planned-only paste forces `source = manual` and drops HK link so copies aren’t falsely treated as imports.
+
+### Task 016 — Templates UI Refactor
+
+- Verified Strength/Endurance sections, CRUD, soft delete, exercise reorder already in place from 009–011.
+- Added empty-state copy for both sections; delete alerts clarify applied workouts are unaffected.
+
+**Major decisions**
+- Gap-fill only — no screen rewrite; acceptance criteria were largely already met.
+
+### Next up — Task 017
+
+- Weekly templates polish (then HealthKit 018–020).
 
 ---
 
@@ -436,4 +541,4 @@ progressio/progressio/
 
 ---
 
-*Last updated: Task 010 complete.*
+*Last updated: Task 016 complete.*

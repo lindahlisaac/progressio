@@ -31,6 +31,7 @@ extension Workout {
 
     static func strength(
         plannedDate: Date,
+        timePeriod: TimePeriod = .am,
         title: String,
         notes: String? = nil,
         templateName: String? = nil,
@@ -38,6 +39,7 @@ extension Workout {
     ) -> Workout {
         Workout(
             plannedDate: plannedDate,
+            timePeriod: timePeriod,
             title: title,
             activityType: .strength,
             status: .planned,
@@ -49,12 +51,14 @@ extension Workout {
 
     static func run(
         plannedDate: Date,
+        timePeriod: TimePeriod = .am,
         title: String,
         imported: Bool,
         notes: String? = nil
     ) -> Workout {
         Workout(
             plannedDate: plannedDate,
+            timePeriod: timePeriod,
             title: title,
             activityType: .roadRun,
             status: imported ? .imported : .planned,
@@ -65,12 +69,14 @@ extension Workout {
 
     static func ride(
         plannedDate: Date,
+        timePeriod: TimePeriod = .am,
         title: String,
         imported: Bool,
         notes: String? = nil
     ) -> Workout {
         Workout(
             plannedDate: plannedDate,
+            timePeriod: timePeriod,
             title: title,
             activityType: .bike,
             status: imported ? .imported : .planned,
@@ -79,11 +85,31 @@ extension Workout {
         )
     }
 
-    static func from(template: StrengthTemplate, plannedDate: Date) -> Workout {
+    /// Manual blank workout for any planner activity type.
+    static func manual(
+        activityType: ActivityType,
+        plannedDate: Date,
+        timePeriod: TimePeriod = .am,
+        title: String? = nil,
+        notes: String? = nil
+    ) -> Workout {
+        Workout(
+            plannedDate: plannedDate,
+            timePeriod: timePeriod,
+            title: title ?? activityType.defaultTitle,
+            activityType: activityType,
+            status: .planned,
+            source: .manual,
+            notes: notes
+        )
+    }
+
+    static func from(template: StrengthTemplate, plannedDate: Date, timePeriod: TimePeriod = .am) -> Workout {
         var planned = PlannedValues.empty
         planned.plannedStrengthRoutineSnapshot = TemplateSnapshot.plannedSnapshot(from: template)
         return Workout(
             plannedDate: plannedDate,
+            timePeriod: timePeriod,
             title: template.name,
             activityType: .strength,
             plannedValues: planned,
@@ -95,7 +121,7 @@ extension Workout {
         )
     }
 
-    static func from(template: EnduranceTemplate, plannedDate: Date) -> Workout {
+    static func from(template: EnduranceTemplate, plannedDate: Date, timePeriod: TimePeriod = .am) -> Workout {
         var planned = PlannedValues.empty
         planned.plannedDistance = template.plannedDistance
         planned.plannedDuration = template.plannedDuration
@@ -105,6 +131,7 @@ extension Workout {
         planned.plannedRoute = template.route
         return Workout(
             plannedDate: plannedDate,
+            timePeriod: timePeriod,
             title: template.name,
             activityType: template.activityType,
             runType: template.runType,
@@ -123,12 +150,24 @@ extension Workout {
 }
 
 extension WorkoutStatus {
+    /// Short badge label for planner rows (keeps Partially Completed compact).
+    var badgeLabel: String {
+        switch self {
+        case .planned: return "Planned"
+        case .completed: return "Done"
+        case .partiallyCompleted: return "Partial"
+        case .imported: return "Imported"
+        case .skipped: return "Skipped"
+        }
+    }
+
     var tint: Color {
         switch self {
-        case .planned: return .blue.opacity(0.8)
-        case .completed, .partiallyCompleted: return .green.opacity(0.85)
-        case .imported: return .orange.opacity(0.85)
-        case .skipped: return .gray.opacity(0.8)
+        case .planned: return .blue.opacity(0.85)
+        case .completed: return .green.opacity(0.85)
+        case .partiallyCompleted: return Color(red: 0.15, green: 0.55, blue: 0.45).opacity(0.9)
+        case .imported: return .orange.opacity(0.9)
+        case .skipped: return .gray.opacity(0.75)
         }
     }
 
@@ -154,10 +193,14 @@ enum WorkoutEditing {
         actualDistance: String?,
         actualDuration: String?,
         actualElevation: String?,
-        status: WorkoutStatus
+        status: WorkoutStatus,
+        timePeriod: TimePeriod? = nil
     ) {
         workout.title = title
         workout.runType = runType
+        if let timePeriod {
+            workout.timePeriod = timePeriod
+        }
         workout.plannedValues.plannedDistance = emptyToNil(plannedDistance)
         workout.plannedValues.plannedDuration = emptyToNil(plannedDuration)
         workout.plannedValues.plannedElevationGain = emptyToNil(plannedElevation)

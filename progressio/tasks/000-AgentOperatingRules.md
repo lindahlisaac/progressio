@@ -47,3 +47,4 @@ A task is done only when:
 - No unrelated feature was added.
 - Any changed data model has a migration path.
 - Any changed behavior is reflected in the relevant Docs file if needed.
+- `tasks/ImplementationNotes.md` Task Completion Notes include a **Major decisions** subsection for the completed task (why key code choices were made, not only what shipped).

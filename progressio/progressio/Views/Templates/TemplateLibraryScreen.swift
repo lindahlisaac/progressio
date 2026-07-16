@@ -56,7 +56,7 @@ struct TemplateLibraryView: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: { template in
-            Text("This will remove \(template.name). This action cannot be undone.")
+            Text("\(template.name) will be removed from your library. Applied workouts are not affected.")
         }
         .alert("Delete template?", isPresented: $showingEnduranceDeleteAlert, presenting: endurancePendingDelete) { template in
             Button("Delete", role: .destructive) {
@@ -64,7 +64,7 @@ struct TemplateLibraryView: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: { template in
-            Text("This will remove \(template.name). This action cannot be undone.")
+            Text("\(template.name) will be removed from your library. Applied workouts are not affected.")
         }
         .alert("Apply Template to Current Week?", isPresented: $showingApplyAlert, presenting: templateToApply) { template in
             applyWeeklyTemplateActions(template)
@@ -78,6 +78,11 @@ struct TemplateLibraryView: View {
     @ViewBuilder
     private var strengthTemplatesSection: some View {
         Section("Strength") {
+            if viewModel.activeTemplates.isEmpty {
+                Text("No strength templates yet.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
             ForEach(viewModel.activeTemplates) { template in
                 NavigationLink {
                     TemplateDetailView(template: template, viewModel: viewModel)
@@ -110,6 +115,11 @@ struct TemplateLibraryView: View {
     @ViewBuilder
     private var enduranceTemplatesSection: some View {
         Section("Endurance") {
+            if viewModel.activeEnduranceTemplates.isEmpty {
+                Text("No endurance templates yet.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
             ForEach(viewModel.activeEnduranceTemplates) { template in
                 NavigationLink {
                     EnduranceTemplateDetailView(template: template, viewModel: viewModel)
@@ -435,12 +445,12 @@ struct TemplateLibraryView: View {
                         )
                     )
                 }
-                Button("Blank ride") {
+                Button("Blank bike") {
                     weeklyDraftDays[idx].workoutEntries.append(
                         WeeklyTemplateWorkoutEntry(
                             activityType: .bike,
-                            title: "Ride",
-                            notes: "Planned ride"
+                            title: "Bike",
+                            notes: "Planned bike"
                         )
                     )
                 }

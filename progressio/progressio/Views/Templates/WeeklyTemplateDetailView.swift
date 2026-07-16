@@ -150,12 +150,12 @@ struct WeeklyTemplateDetailView: View {
                         )
                     )
                 }
-                Button("Blank ride") {
+                Button("Blank bike") {
                     editDraftDays[idx].workoutEntries.append(
                         WeeklyTemplateWorkoutEntry(
                             activityType: .bike,
-                            title: "Ride",
-                            notes: "Planned ride"
+                            title: "Bike",
+                            notes: "Planned bike"
                         )
                     )
                 }

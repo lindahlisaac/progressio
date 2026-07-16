@@ -2,7 +2,7 @@ import SwiftUI
 
 struct RideDetailView: View {
     let workout: Workout
-    var onSave: ((String, RunCategory?, String, String, String, WorkoutStatus, String?, String?, String?) -> Void)?
+    var onSave: ((String, RunCategory?, String, String, String, WorkoutStatus, String?, String?, String?, TimePeriod) -> Void)?
 
     @State private var title: String
     @State private var plannedMiles: String
@@ -17,16 +17,17 @@ struct RideDetailView: View {
     @State private var actualSeconds: Int
     @State private var effortUnit: EffortUnit
     @State private var isCompleted: Bool
+    @State private var timePeriod: TimePeriod
     @FocusState private var focusedField: Field?
     @Environment(\.dismiss) private var dismiss
 
     init(
         workout: Workout,
-        onSave: ((String, RunCategory?, String, String, String, WorkoutStatus, String?, String?, String?) -> Void)? = nil
+        onSave: ((String, RunCategory?, String, String, String, WorkoutStatus, String?, String?, String?, TimePeriod) -> Void)? = nil
     ) {
         self.workout = workout
         self.onSave = onSave
-        _title = State(initialValue: workout.title.isEmpty ? "Ride" : workout.title)
+        _title = State(initialValue: workout.title.isEmpty ? "Bike" : workout.title)
         _plannedMiles = State(initialValue: workout.plannedDistance)
         _actualMiles = State(initialValue: workout.actualDistance)
         _plannedElevation = State(initialValue: workout.plannedElevation)
@@ -41,6 +42,7 @@ struct RideDetailView: View {
         _actualSeconds = State(initialValue: as_)
         _effortUnit = State(initialValue: .miles)
         _isCompleted = State(initialValue: workout.status == .completed || workout.status == .partiallyCompleted)
+        _timePeriod = State(initialValue: workout.timePeriod)
     }
 
     var body: some View {
@@ -56,9 +58,15 @@ struct RideDetailView: View {
                     Text("Session title")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    TextField("Ride", text: $title)
+                    TextField("Bike", text: $title)
                         .focused($focusedField, equals: .title)
                 }
+                Picker("Time of day", selection: $timePeriod) {
+                    ForEach(TimePeriod.allCases) { period in
+                        Text(period.rawValue).tag(period)
+                    }
+                }
+                .pickerStyle(.segmented)
                 Picker("Effort unit", selection: $effortUnit) {
                     ForEach(EffortUnit.allCases) { unit in
                         Text(unit.label).tag(unit)
@@ -124,7 +132,7 @@ struct RideDetailView: View {
                 Toggle("Mark complete", isOn: $isCompleted)
             }
         }
-        .navigationTitle("Ride Details")
+        .navigationTitle("Bike Details")
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") {
@@ -191,7 +199,7 @@ struct RideDetailView: View {
 
     private func save(statusOverride: WorkoutStatus?, dismissAfter: Bool) {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let effectiveTitle = trimmedTitle.isEmpty ? "Ride" : trimmedTitle
+        let effectiveTitle = trimmedTitle.isEmpty ? "Bike" : trimmedTitle
 
         let plannedDistance: String
         let plannedDuration: String
@@ -220,7 +228,8 @@ struct RideDetailView: View {
             status,
             actualDistanceValue,
             actualDurationValue,
-            actualElevationValue
+            actualElevationValue,
+            timePeriod
         )
         if dismissAfter {
             dismiss()
