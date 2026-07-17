@@ -2,9 +2,11 @@ import SwiftUI
 
 struct RunDetailView: View {
     let workout: Workout
-    var onSave: ((String, RunCategory?, String, String, String, WorkoutStatus, String?, String?, String?, TimePeriod) -> Void)?
+    /// title, activityType, runCategory, plannedDistance, plannedDuration, plannedElevation, status, actualDistance, actualDuration, actualElevation, timePeriod, notes
+    var onSave: ((String, ActivityType, RunCategory?, String, String, String, WorkoutStatus, String?, String?, String?, TimePeriod, String) -> Void)?
 
     @State private var title: String
+    @State private var activityType: ActivityType
     @State private var distance: String
     @State private var actualDistance: String
     @State private var plannedElevation: String
@@ -20,15 +22,20 @@ struct RunDetailView: View {
     @State private var isCompleted: Bool
     @State private var category: RunCategory = .easy
     @State private var timePeriod: TimePeriod
+    @State private var notes: String
     @Environment(\.dismiss) private var dismiss
+
+    private static let runActivityTypes: [ActivityType] = [.roadRun, .trailRun, .walk]
 
     init(
         workout: Workout,
-        onSave: ((String, RunCategory?, String, String, String, WorkoutStatus, String?, String?, String?, TimePeriod) -> Void)? = nil
+        onSave: ((String, ActivityType, RunCategory?, String, String, String, WorkoutStatus, String?, String?, String?, TimePeriod, String) -> Void)? = nil
     ) {
         self.workout = workout
         self.onSave = onSave
-        _title = State(initialValue: workout.title.isEmpty ? workout.activityType.defaultTitle : workout.title)
+        let initialActivity = Self.runActivityTypes.contains(workout.activityType) ? workout.activityType : .roadRun
+        _activityType = State(initialValue: initialActivity)
+        _title = State(initialValue: workout.title.isEmpty ? initialActivity.defaultTitle : workout.title)
         _distance = State(initialValue: workout.plannedDistance)
         _actualDistance = State(initialValue: workout.actualDistance)
         _plannedElevation = State(initialValue: workout.plannedElevation)
@@ -45,6 +52,7 @@ struct RunDetailView: View {
         _isCompleted = State(initialValue: workout.status == .completed || workout.status == .partiallyCompleted)
         _category = State(initialValue: workout.runType?.runCategory ?? .easy)
         _timePeriod = State(initialValue: workout.timePeriod)
+        _notes = State(initialValue: workout.notes ?? "")
     }
 
     var body: some View {
@@ -60,8 +68,21 @@ struct RunDetailView: View {
                     Text("Session title")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    TextField(workout.activityType.defaultTitle, text: $title)
+                    TextField(activityType.defaultTitle, text: $title)
                         .focused($focusedField, equals: .title)
+                }
+                Picker("Activity", selection: $activityType) {
+                    ForEach(Self.runActivityTypes) { type in
+                        Text(type.rawValue).tag(type)
+                    }
+                }
+                .onChange(of: activityType) { newType in
+                    // Keep title in sync when it still matches a default modality label.
+                    let defaults = Set(Self.runActivityTypes.map(\.defaultTitle))
+                    if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || defaults.contains(title) {
+                        title = newType.defaultTitle
+                    }
                 }
                 Picker("Time of day", selection: $timePeriod) {
                     ForEach(TimePeriod.allCases) { period in
@@ -76,7 +97,7 @@ struct RunDetailView: View {
                 }
                 .pickerStyle(.segmented)
 
-                Picker("Run type", selection: $category) {
+                Picker("Training type", selection: $category) {
                     ForEach(RunCategory.allCases) { cat in
                         Text(cat.rawValue).tag(cat)
                     }
@@ -137,11 +158,17 @@ struct RunDetailView: View {
                 }
             }
 
+            Section("Notes") {
+                TextEditor(text: $notes)
+                    .frame(minHeight: 100)
+                    .focused($focusedField, equals: .notes)
+            }
+
             Section {
                 Toggle("Mark complete", isOn: $isCompleted)
             }
         }
-        .navigationTitle("\(workout.activityType.rawValue) Details")
+        .navigationTitle("\(activityType.rawValue) Details")
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") {
@@ -205,11 +232,12 @@ struct RunDetailView: View {
         case actualMiles
         case plannedElevation
         case actualElevation
+        case notes
     }
 
     private func save(statusOverride: WorkoutStatus?, dismissAfter: Bool) {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let effectiveTitle = trimmedTitle.isEmpty ? workout.activityType.defaultTitle : trimmedTitle
+        let effectiveTitle = trimmedTitle.isEmpty ? activityType.defaultTitle : trimmedTitle
 
         let plannedDistance: String
         let plannedDuration: String
@@ -231,6 +259,7 @@ struct RunDetailView: View {
         let status = statusOverride ?? (isCompleted ? WorkoutStatus.completed : .planned)
         onSave?(
             effectiveTitle,
+            activityType,
             category,
             plannedDistance,
             plannedDuration,
@@ -239,7 +268,8 @@ struct RunDetailView: View {
             actualDistanceValue,
             actualDurationValue,
             actualElevationValue,
-            timePeriod
+            timePeriod,
+            notes
         )
         if dismissAfter {
             dismiss()

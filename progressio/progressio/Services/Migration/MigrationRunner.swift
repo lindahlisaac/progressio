@@ -24,6 +24,8 @@ final class MigrationRunner {
     MigrateTemplatesAndStrengthLogsStep(),
     MigrateEnduranceTemplatesStep(),
     MigrateWeeklyTemplateSnapshotsStep(),
+    MigrateHealthKitImportReferencesStep(),
+    MigrateStrengthLogEmbedStep(),
   ]
 
   /// Runs pending migrations on app launch. Safe to call multiple times.

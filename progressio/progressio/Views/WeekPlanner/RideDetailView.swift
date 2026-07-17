@@ -2,7 +2,7 @@ import SwiftUI
 
 struct RideDetailView: View {
     let workout: Workout
-    var onSave: ((String, RunCategory?, String, String, String, WorkoutStatus, String?, String?, String?, TimePeriod) -> Void)?
+    var onSave: ((String, RunCategory?, String, String, String, WorkoutStatus, String?, String?, String?, TimePeriod, String) -> Void)?
 
     @State private var title: String
     @State private var plannedMiles: String
@@ -17,13 +17,15 @@ struct RideDetailView: View {
     @State private var actualSeconds: Int
     @State private var effortUnit: EffortUnit
     @State private var isCompleted: Bool
+    @State private var category: RunCategory
     @State private var timePeriod: TimePeriod
+    @State private var notes: String
     @FocusState private var focusedField: Field?
     @Environment(\.dismiss) private var dismiss
 
     init(
         workout: Workout,
-        onSave: ((String, RunCategory?, String, String, String, WorkoutStatus, String?, String?, String?, TimePeriod) -> Void)? = nil
+        onSave: ((String, RunCategory?, String, String, String, WorkoutStatus, String?, String?, String?, TimePeriod, String) -> Void)? = nil
     ) {
         self.workout = workout
         self.onSave = onSave
@@ -42,7 +44,9 @@ struct RideDetailView: View {
         _actualSeconds = State(initialValue: as_)
         _effortUnit = State(initialValue: .miles)
         _isCompleted = State(initialValue: workout.status == .completed || workout.status == .partiallyCompleted)
+        _category = State(initialValue: workout.runType?.runCategory ?? .easy)
         _timePeriod = State(initialValue: workout.timePeriod)
+        _notes = State(initialValue: workout.notes ?? "")
     }
 
     var body: some View {
@@ -67,6 +71,11 @@ struct RideDetailView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                Picker("Training type", selection: $category) {
+                    ForEach(RunCategory.allCases) { cat in
+                        Text(cat.rawValue).tag(cat)
+                    }
+                }
                 Picker("Effort unit", selection: $effortUnit) {
                     ForEach(EffortUnit.allCases) { unit in
                         Text(unit.label).tag(unit)
@@ -126,6 +135,12 @@ struct RideDetailView: View {
                         .keyboardType(.numberPad)
                         .focused($focusedField, equals: .actualElevation)
                 }
+            }
+
+            Section("Notes") {
+                TextEditor(text: $notes)
+                    .frame(minHeight: 100)
+                    .focused($focusedField, equals: .notes)
             }
 
             Section {
@@ -195,6 +210,7 @@ struct RideDetailView: View {
         case actualMiles
         case plannedElevation
         case actualElevation
+        case notes
     }
 
     private func save(statusOverride: WorkoutStatus?, dismissAfter: Bool) {
@@ -221,7 +237,7 @@ struct RideDetailView: View {
         let status = statusOverride ?? (isCompleted ? WorkoutStatus.completed : .planned)
         onSave?(
             effectiveTitle,
-            nil,
+            category,
             plannedDistance,
             plannedDuration,
             plannedElevation,
@@ -229,7 +245,8 @@ struct RideDetailView: View {
             actualDistanceValue,
             actualDurationValue,
             actualElevationValue,
-            timePeriod
+            timePeriod,
+            notes
         )
         if dismissAfter {
             dismiss()

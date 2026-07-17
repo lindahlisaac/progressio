@@ -31,8 +31,39 @@ struct TemplateLibraryView: View {
     @State private var selectedDayIndexForTemplate: Int?
     @State private var showingApplyAlert = false
     @State private var templateToApply: WeeklyTemplate?
+    @State private var showingPeriodizedAddSheet = false
+    @State private var blockPendingDelete: PeriodizedBlockTemplate?
+    @State private var showingBlockDeleteAlert = false
+    @State private var blockToApply: PeriodizedBlockTemplate?
+    @State private var showingBlockApplyAlert = false
 
     var body: some View {
+        templateListContent
+            .navigationTitle("Templates")
+            .toolbar { addToolbar }
+            .modifier(TemplateLibraryAlertsModifier(
+                viewModel: viewModel,
+                weekViewModel: weekViewModel,
+                templatePendingDelete: $templatePendingDelete,
+                showingDeleteAlert: $showingDeleteAlert,
+                endurancePendingDelete: $endurancePendingDelete,
+                showingEnduranceDeleteAlert: $showingEnduranceDeleteAlert,
+                blockPendingDelete: $blockPendingDelete,
+                showingBlockDeleteAlert: $showingBlockDeleteAlert,
+                templateToApply: $templateToApply,
+                showingApplyAlert: $showingApplyAlert,
+                blockToApply: $blockToApply,
+                showingBlockApplyAlert: $showingBlockApplyAlert
+            ))
+            .sheet(isPresented: $showingAddSheet) { workoutTemplateSheet }
+            .sheet(isPresented: $showingWeeklyAddSheet) { weeklyTemplateSheet }
+            .sheet(isPresented: $showingPeriodizedAddSheet) {
+                CreatePeriodizedBlockSheet(weekViewModel: weekViewModel, isPresented: $showingPeriodizedAddSheet)
+            }
+    }
+
+    @ViewBuilder
+    private var templateListContent: some View {
         List {
             Picker("Template view", selection: $selection) {
                 ForEach(TemplateKind.allCases) { kind in
@@ -41,38 +72,22 @@ struct TemplateLibraryView: View {
             }
             .pickerStyle(.segmented)
 
-            if selection == .workout {
+            switch selection {
+            case .workout:
                 strengthTemplatesSection
                 enduranceTemplatesSection
-            } else {
+            case .weekly:
                 weeklyTemplatesSection
+            case .blocks:
+                PeriodizedBlocksSection(
+                    weekViewModel: weekViewModel,
+                    blockPendingDelete: $blockPendingDelete,
+                    showingDeleteAlert: $showingBlockDeleteAlert,
+                    blockToApply: $blockToApply,
+                    showingApplyAlert: $showingBlockApplyAlert
+                )
             }
         }
-        .navigationTitle("Templates")
-        .toolbar { addToolbar }
-        .alert("Delete template?", isPresented: $showingDeleteAlert, presenting: templatePendingDelete) { template in
-            Button("Delete", role: .destructive) {
-                viewModel.deleteTemplate(id: template.id)
-            }
-            Button("Cancel", role: .cancel) { }
-        } message: { template in
-            Text("\(template.name) will be removed from your library. Applied workouts are not affected.")
-        }
-        .alert("Delete template?", isPresented: $showingEnduranceDeleteAlert, presenting: endurancePendingDelete) { template in
-            Button("Delete", role: .destructive) {
-                viewModel.deleteEnduranceTemplate(id: template.id)
-            }
-            Button("Cancel", role: .cancel) { }
-        } message: { template in
-            Text("\(template.name) will be removed from your library. Applied workouts are not affected.")
-        }
-        .alert("Apply Template to Current Week?", isPresented: $showingApplyAlert, presenting: templateToApply) { template in
-            applyWeeklyTemplateActions(template)
-        } message: { template in
-            applyWeeklyTemplateMessage(template)
-        }
-        .sheet(isPresented: $showingAddSheet) { workoutTemplateSheet }
-        .sheet(isPresented: $showingWeeklyAddSheet) { weeklyTemplateSheet }
     }
 
     @ViewBuilder
@@ -209,17 +224,29 @@ struct TemplateLibraryView: View {
     private var addToolbar: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
             Button {
-                if selection == .workout {
+                switch selection {
+                case .workout:
                     showingAddSheet = true
-                } else {
+                case .weekly:
                     weeklyDraftDays = TemplateLibraryView.blankWeek()
                     weeklyName = ""
                     weeklyNote = ""
                     showingWeeklyAddSheet = true
+                case .blocks:
+                    showingPeriodizedAddSheet = true
                 }
             } label: {
-                Label(selection == .workout ? "Add Template" : "Add Weekly", systemImage: "plus")
+                Label(addButtonTitle, systemImage: "plus")
             }
+            .accessibilityLabel(addButtonTitle)
+        }
+    }
+
+    private var addButtonTitle: String {
+        switch selection {
+        case .workout: return "Add Template"
+        case .weekly: return "Add Weekly"
+        case .blocks: return "Add Block"
         }
     }
 
@@ -436,32 +463,12 @@ struct TemplateLibraryView: View {
                 weeklyDraftDays[idx].workoutEntries.remove(atOffsets: offsets)
             }
             Menu("Add workout") {
-                Button("Blank run") {
-                    weeklyDraftDays[idx].workoutEntries.append(
-                        WeeklyTemplateWorkoutEntry(
-                            activityType: .roadRun,
-                            title: "Run",
-                            notes: "Planned run"
+                ForEach(ActivityType.plannerAddTypes) { activityType in
+                    Button("Blank \(activityType.rawValue)") {
+                        weeklyDraftDays[idx].workoutEntries.append(
+                            WeeklyTemplateWorkoutEntry.blank(activityType: activityType)
                         )
-                    )
-                }
-                Button("Blank bike") {
-                    weeklyDraftDays[idx].workoutEntries.append(
-                        WeeklyTemplateWorkoutEntry(
-                            activityType: .bike,
-                            title: "Bike",
-                            notes: "Planned bike"
-                        )
-                    )
-                }
-                Button("Blank strength") {
-                    weeklyDraftDays[idx].workoutEntries.append(
-                        WeeklyTemplateWorkoutEntry(
-                            activityType: .strength,
-                            title: "Strength",
-                            notes: "Strength session"
-                        )
-                    )
+                    }
                 }
                 Divider()
                 Button("From template...") {
@@ -617,6 +624,7 @@ struct TemplateLibraryView: View {
 enum TemplateKind: String, CaseIterable, Identifiable {
     case workout
     case weekly
+    case blocks
 
     var id: String { rawValue }
 
@@ -624,7 +632,111 @@ enum TemplateKind: String, CaseIterable, Identifiable {
         switch self {
         case .workout: return "Workouts"
         case .weekly: return "Weekly"
+        case .blocks: return "Blocks"
         }
+    }
+}
+
+private struct TemplateLibraryAlertsModifier: ViewModifier {
+    @ObservedObject var viewModel: TemplateLibraryViewModel
+    @ObservedObject var weekViewModel: WeekPlannerViewModel
+    @Binding var templatePendingDelete: StrengthTemplate?
+    @Binding var showingDeleteAlert: Bool
+    @Binding var endurancePendingDelete: EnduranceTemplate?
+    @Binding var showingEnduranceDeleteAlert: Bool
+    @Binding var blockPendingDelete: PeriodizedBlockTemplate?
+    @Binding var showingBlockDeleteAlert: Bool
+    @Binding var templateToApply: WeeklyTemplate?
+    @Binding var showingApplyAlert: Bool
+    @Binding var blockToApply: PeriodizedBlockTemplate?
+    @Binding var showingBlockApplyAlert: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .alert("Delete template?", isPresented: $showingDeleteAlert, presenting: templatePendingDelete) { template in
+                Button("Delete", role: .destructive) {
+                    viewModel.deleteTemplate(id: template.id)
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: { template in
+                Text("\(template.name) will be removed from your library. Applied workouts are not affected.")
+            }
+            .alert("Delete template?", isPresented: $showingEnduranceDeleteAlert, presenting: endurancePendingDelete) { template in
+                Button("Delete", role: .destructive) {
+                    viewModel.deleteEnduranceTemplate(id: template.id)
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: { template in
+                Text("\(template.name) will be removed from your library. Applied workouts are not affected.")
+            }
+            .alert("Delete block?", isPresented: $showingBlockDeleteAlert, presenting: blockPendingDelete) { block in
+                Button("Delete", role: .destructive) {
+                    weekViewModel.deletePeriodizedBlock(id: block.id)
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: { block in
+                Text("\(block.name) will be removed from your library. Applied calendar weeks are not affected.")
+            }
+            .alert("Apply Template to Current Week?", isPresented: $showingApplyAlert, presenting: templateToApply) { template in
+                if weekViewModel.hasWorkoutsInCurrentWeek() {
+                    Button("Override existing") {
+                        weekViewModel.applyWeeklyTemplate(template, to: weekViewModel.currentStartOfWeek, keepExisting: false)
+                    }
+                    Button("Keep existing") {
+                        weekViewModel.applyWeeklyTemplate(template, to: weekViewModel.currentStartOfWeek, keepExisting: true)
+                    }
+                    Button("Cancel", role: .cancel) { }
+                } else {
+                    Button("Apply") {
+                        weekViewModel.applyWeeklyTemplate(template, to: weekViewModel.currentStartOfWeek, keepExisting: false)
+                    }
+                    Button("Cancel", role: .cancel) { }
+                }
+            } message: { template in
+                if weekViewModel.hasWorkoutsInCurrentWeek() {
+                    Text("You have existing workouts this week. Choose to override them or keep them alongside '\(template.name)'.")
+                } else {
+                    Text("This will apply '\(template.name)' to the current week.")
+                }
+            }
+            .alert("Apply Periodized Block?", isPresented: $showingBlockApplyAlert, presenting: blockToApply) { block in
+                periodizedApplyButtons(block)
+            } message: { block in
+                periodizedApplyMessage(block)
+            }
+    }
+
+    @ViewBuilder
+    private func periodizedApplyButtons(_ block: PeriodizedBlockTemplate) -> some View {
+        let hasConflicts = weekViewModel.periodizedBlockRangeHasWorkouts(
+            startingAt: weekViewModel.currentStartOfWeek,
+            weekCount: block.weekCount
+        )
+        if hasConflicts {
+            Button("Merge") {
+                weekViewModel.applyPeriodizedBlock(block, startingAt: weekViewModel.currentStartOfWeek, keepExisting: true)
+            }
+            Button("Overwrite", role: .destructive) {
+                weekViewModel.applyPeriodizedBlock(block, startingAt: weekViewModel.currentStartOfWeek, keepExisting: false)
+            }
+            Button("Cancel", role: .cancel) {}
+        } else {
+            Button("Apply") {
+                weekViewModel.applyPeriodizedBlock(block, startingAt: weekViewModel.currentStartOfWeek, keepExisting: true)
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    private func periodizedApplyMessage(_ block: PeriodizedBlockTemplate) -> Text {
+        let hasConflicts = weekViewModel.periodizedBlockRangeHasWorkouts(
+            startingAt: weekViewModel.currentStartOfWeek,
+            weekCount: block.weekCount
+        )
+        if hasConflicts {
+            return Text("“\(block.name)” covers \(block.weekCount) weeks starting from the Plan week. Existing workouts found in that range. Merge keeps them; Overwrite soft-deletes them first.")
+        }
+        return Text("Apply “\(block.name)” (\(block.weekCount) weeks) starting from the currently viewed Plan week?")
     }
 }
 

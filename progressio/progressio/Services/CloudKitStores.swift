@@ -11,6 +11,8 @@ private enum CKRecordType {
     static let enduranceTemplate = "EnduranceTemplate"
     static let weeklyTemplate = "WeeklyTemplate"
     static let unattachedRun = "UnattachedRun"
+    static let importedHealthWorkout = "ImportedHealthWorkout"
+    static let periodizedBlock = "PeriodizedBlockTemplate"
     static let weekPlan = "WeekPlan"
 }
 
@@ -252,6 +254,114 @@ struct CloudUnattachedRunStore: UnattachedRunStore {
     }
 }
 
+struct CloudImportedHealthWorkoutReferenceStore: ImportedHealthWorkoutReferenceStore {
+    func loadReferences() -> [ImportedHealthWorkoutReference] {
+        let semaphore = DispatchSemaphore(value: 0)
+        var result: [ImportedHealthWorkoutReference] = []
+
+        let query = CKQuery(recordType: CKRecordType.importedHealthWorkout, predicate: NSPredicate(value: true))
+        CKConfig.database.perform(query, inZoneWith: nil) { records, error in
+            defer { semaphore.signal() }
+            if let ckError = error as? CKError,
+               ckError.code == .unknownItem || ckError.code == .invalidArguments {
+                result = []
+                return
+            }
+            guard let records, error == nil else {
+                print("Cloud load imported HealthKit refs error: \(String(describing: error))")
+                return
+            }
+            result = records.compactMap { record in
+                guard let data = record[CKFields.payload] as? Data else { return nil }
+                do {
+                    var decoded: ImportedHealthWorkoutReference = try decodePayload(data)
+                    decoded.updatedAt = record[CKFields.updatedAt] as? Date ?? decoded.updatedAt
+                    decoded.etag = record[CKFields.etag] as? String ?? decoded.etag
+                    return decoded
+                } catch {
+                    print("Decode imported HealthKit ref failed: \(error)")
+                    return nil
+                }
+            }
+        }
+        semaphore.wait()
+        return result
+    }
+
+    func save(_ references: [ImportedHealthWorkoutReference]) {
+        let records: [CKRecord] = references.compactMap { reference in
+            let record = CKRecord(
+                recordType: CKRecordType.importedHealthWorkout,
+                recordID: makeRecordID(id: reference.id, type: CKRecordType.importedHealthWorkout)
+            )
+            do {
+                record[CKFields.payload] = try encodePayload(reference) as CKRecordValue
+                record[CKFields.updatedAt] = (reference.updatedAt ?? Date()) as CKRecordValue
+                if let etag = reference.etag { record[CKFields.etag] = etag as CKRecordValue }
+                return record
+            } catch {
+                print("Encode imported HealthKit ref failed: \(error)")
+                return nil
+            }
+        }
+        modify(records: records)
+    }
+}
+
+struct CloudPeriodizedBlockStore: PeriodizedBlockStore {
+    func loadBlocks() -> [PeriodizedBlockTemplate] {
+        let semaphore = DispatchSemaphore(value: 0)
+        var result: [PeriodizedBlockTemplate] = []
+
+        let query = CKQuery(recordType: CKRecordType.periodizedBlock, predicate: NSPredicate(value: true))
+        CKConfig.database.perform(query, inZoneWith: nil) { records, error in
+            defer { semaphore.signal() }
+            if let ckError = error as? CKError,
+               ckError.code == .unknownItem || ckError.code == .invalidArguments {
+                result = []
+                return
+            }
+            guard let records, error == nil else {
+                print("Cloud load periodized blocks error: \(String(describing: error))")
+                return
+            }
+            result = records.compactMap { record in
+                guard let data = record[CKFields.payload] as? Data else { return nil }
+                do {
+                    var decoded: PeriodizedBlockTemplate = try decodePayload(data)
+                    decoded.updatedAt = record[CKFields.updatedAt] as? Date ?? decoded.updatedAt
+                    decoded.etag = record[CKFields.etag] as? String ?? decoded.etag
+                    return decoded
+                } catch {
+                    print("Decode periodized block failed: \(error)")
+                    return nil
+                }
+            }
+        }
+        semaphore.wait()
+        return result
+    }
+
+    func save(_ blocks: [PeriodizedBlockTemplate]) {
+        let records: [CKRecord] = blocks.compactMap { block in
+            let record = CKRecord(
+                recordType: CKRecordType.periodizedBlock,
+                recordID: makeRecordID(id: block.id, type: CKRecordType.periodizedBlock)
+            )
+            do {
+                record[CKFields.payload] = try encodePayload(block) as CKRecordValue
+                record[CKFields.updatedAt] = (block.updatedAt ?? Date()) as CKRecordValue
+                if let etag = block.etag { record[CKFields.etag] = etag as CKRecordValue }
+                return record
+            } catch {
+                print("Encode periodized block failed: \(error)")
+                return nil
+            }
+        }
+        modify(records: records)
+    }
+}
+
 struct CloudWeekPlanStore: WeekPlanStore {
     private let dateFormatter: ISO8601DateFormatter = {
         let fmt = ISO8601DateFormatter()
@@ -317,34 +427,62 @@ struct CloudWeekPlanStore: WeekPlanStore {
 
 // MARK: - Common modify operation
 
-private func modify(records: [CKRecord]) {
-    guard !records.isEmpty else { return }
-    for record in records {
-        if let data = record[CKFields.payload] as? Data {
-            if let json = String(data: data, encoding: .utf8) {
-                print("🪵 Cloud save payload \(record.recordType) \(record.recordID.recordName): \(json)")
-            } else {
-                print("🪵 Cloud save payload \(record.recordType) \(record.recordID.recordName): \(data.count) bytes (non-UTF8)")
+/// Coalesces CloudKit writes so rapid local saves (e.g. strength keystrokes) do not
+/// enqueue unbounded `CKModifyRecordsOperation`s, each holding a full JSON payload.
+private final class CloudKitModifyQueue {
+    static let shared = CloudKitModifyQueue()
+
+    private let lock = NSLock()
+    private var pendingByRecordName: [String: CKRecord] = [:]
+    private var inFlight = false
+
+    func enqueue(_ records: [CKRecord]) {
+        guard !records.isEmpty else { return }
+        lock.lock()
+        for record in records {
+            pendingByRecordName[record.recordID.recordName] = record
+        }
+        let shouldStart = !inFlight
+        if shouldStart { inFlight = true }
+        lock.unlock()
+        if shouldStart {
+            flush()
+        }
+    }
+
+    private func flush() {
+        lock.lock()
+        let batch = Array(pendingByRecordName.values)
+        pendingByRecordName.removeAll(keepingCapacity: true)
+        if batch.isEmpty {
+            inFlight = false
+            lock.unlock()
+            return
+        }
+        lock.unlock()
+
+        let op = CKModifyRecordsOperation(recordsToSave: batch, recordIDsToDelete: nil)
+        op.savePolicy = .allKeys
+        op.qualityOfService = .utility
+        op.modifyRecordsResultBlock = { [weak self] result in
+            if case .failure(let error) = result {
+                print("❌ Cloud modify records error: \(error)")
+            }
+            guard let self else { return }
+            self.lock.lock()
+            let hasPending = !self.pendingByRecordName.isEmpty
+            if !hasPending {
+                self.inFlight = false
+            }
+            self.lock.unlock()
+            if hasPending {
+                self.flush()
             }
         }
+        CKConfig.database.add(op)
     }
-    let op = CKModifyRecordsOperation(recordsToSave: records, recordIDsToDelete: nil)
-    op.savePolicy = .allKeys
-    op.perRecordSaveBlock = { recordID, result in
-        switch result {
-        case .success:
-            print("✅ Cloud saved record \(recordID.recordName)")
-        case .failure(let error):
-            print("❌ Cloud save failed for \(recordID.recordName): \(error)")
-        }
-    }
-    op.modifyRecordsResultBlock = { result in
-        switch result {
-        case .success:
-            print("✅ Cloud modify batch succeeded (\(records.count) records)")
-        case .failure(let error):
-            print("❌ Cloud modify records error: \(error)")
-        }
-    }
-    CKConfig.database.add(op)
+}
+
+private func modify(records: [CKRecord]) {
+    CloudKitModifyQueue.shared.enqueue(records)
 }

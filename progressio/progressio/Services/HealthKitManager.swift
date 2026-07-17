@@ -4,6 +4,7 @@ import HealthKit
 final class HealthKitManager {
     static let shared = HealthKitManager()
     private let healthStore = HKHealthStore()
+    private var observerQuery: HKObserverQuery?
 
     private init() {}
 
@@ -24,7 +25,11 @@ final class HealthKitManager {
         }
     }
 
-    func fetchRecentRuns(since startDate: Date?, limit: Int = 50, completion: @escaping ([UnattachedRun]) -> Void) {
+    func fetchRecentRunCandidates(
+        since startDate: Date?,
+        limit: Int = 50,
+        completion: @escaping ([HealthKitImportCandidate]) -> Void
+    ) {
         let predicate = HKQuery.predicateForWorkouts(with: .running)
         let datePredicate: NSPredicate?
         if let startDate {
@@ -37,46 +42,72 @@ final class HealthKitManager {
         }
 
         let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
-        let query = HKSampleQuery(sampleType: .workoutType(), predicate: datePredicate, limit: limit, sortDescriptors: [sort]) { [weak self] _, samples, error in
+        let query = HKSampleQuery(
+            sampleType: .workoutType(),
+            predicate: datePredicate,
+            limit: limit,
+            sortDescriptors: [sort]
+        ) { [weak self] _, samples, error in
             guard let self else {
                 DispatchQueue.main.async { completion([]) }
                 return
             }
             guard error == nil, let workouts = samples as? [HKWorkout] else {
+                if let error {
+                    print("HK fetch error: \(error)")
+                }
                 DispatchQueue.main.async { completion([]) }
                 return
             }
-            let runs = workouts.map { workout in
-                self.makeUnattachedRun(from: workout)
-            }
+            let candidates = workouts.map { self.makeCandidate(from: $0) }
             DispatchQueue.main.async {
-                completion(runs)
+                completion(candidates)
             }
         }
         healthStore.execute(query)
     }
 
+    /// Legacy bridge used by older call sites; prefer `fetchRecentRunCandidates`.
+    func fetchRecentRuns(since startDate: Date?, limit: Int = 50, completion: @escaping ([UnattachedRun]) -> Void) {
+        fetchRecentRunCandidates(since: startDate, limit: limit) { candidates in
+            completion(candidates.map(\.unattachedRun))
+        }
+    }
+
+    /// Clears any previously enabled HealthKit background delivery (from older observer builds).
+    func disableBackgroundDeliveryIfNeeded() {
+        stopObservingRuns()
+        healthStore.disableBackgroundDelivery(for: .workoutType()) { _, error in
+            if let error {
+                print("HK disable background delivery: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func stopObservingRuns() {
+        if let observerQuery {
+            healthStore.stop(observerQuery)
+            self.observerQuery = nil
+        }
+    }
+
+    /// Not used by the app (imports are Settings-triggered). Kept for possible future use;
+    /// stores the query so it can be stopped and does not enable `.immediate` delivery.
     func startObservingRuns(onUpdate: @escaping () -> Void) {
+        stopObservingRuns()
         let predicate = HKQuery.predicateForWorkouts(with: .running)
-        let query = HKObserverQuery(sampleType: .workoutType(), predicate: predicate) { _, _, error in
-            if error == nil {
-                DispatchQueue.main.async {
-                    onUpdate()
-                }
+        let query = HKObserverQuery(sampleType: .workoutType(), predicate: predicate) { _, completionHandler, error in
+            defer { completionHandler() }
+            guard error == nil else { return }
+            DispatchQueue.main.async {
+                onUpdate()
             }
         }
+        observerQuery = query
         healthStore.execute(query)
-        healthStore.enableBackgroundDelivery(for: .workoutType(), frequency: .immediate) { success, error in
-            if let error = error {
-                print("Background delivery error: \(error)")
-            } else {
-                print("Background delivery \(success ? "enabled" : "not enabled")")
-            }
-        }
     }
 
-    private func makeUnattachedRun(from workout: HKWorkout) -> UnattachedRun {
-        let title = workout.workoutActivityType == .running ? "Run" : workout.workoutActivityType.name
+    private func makeCandidate(from workout: HKWorkout) -> HealthKitImportCandidate {
         let distanceMi: String = {
             if let dist = workout.totalDistance?.doubleValue(for: .meter()) {
                 let miles = dist / 1609.344
@@ -93,30 +124,24 @@ final class HealthKitManager {
             return String(format: "%02d:%02d:%02d", h, m, s)
         }()
 
-        let avgHR: String = "" // Will be populated when querying heart rate samples if available
-
         let detail = RunDetailData(
-            title: title,
+            title: "Run",
             notes: "",
             distance: distanceMi,
             duration: durationString,
-            averageHR: avgHR,
+            averageHR: "",
             category: nil,
             hkWorkoutUUID: workout.uuid.uuidString,
             elevationGain: nil,
             eventDate: workout.startDate
         )
 
-        return UnattachedRun(detail: detail, date: workout.startDate, source: workout.sourceRevision.source.name)
+        return HealthKitImportCandidate(
+            healthKitUUID: workout.uuid.uuidString,
+            startDate: workout.startDate,
+            activityType: .roadRun,
+            detail: detail,
+            sourceName: workout.sourceRevision.source.name
+        )
     }
 }
-
-private extension HKWorkoutActivityType {
-    var name: String {
-        switch self {
-        case .running: return "Run"
-        default: return "Workout"
-        }
-    }
-}
-

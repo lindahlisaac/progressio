@@ -28,13 +28,10 @@ struct SyncingTemplateStore: TemplateStore {
     }
 
     func save(_ templates: [StrengthTemplate]) {
-        let stamped = templates.map { template -> StrengthTemplate in
-            var copy = template
-            SyncMetadata.stampSave(&copy)
-            return copy
-        }
-        local.save(stamped)
-        cloud.save(stamped)
+        // Callers stamp mutated records; re-stamping the whole array on every save
+        // forced full CloudKit rewrites and queued duplicate payloads.
+        local.save(templates)
+        cloud.save(templates)
     }
 }
 
@@ -62,13 +59,8 @@ struct SyncingEnduranceTemplateStore: EnduranceTemplateStore {
     }
 
     func save(_ templates: [EnduranceTemplate]) {
-        let stamped = templates.map { template -> EnduranceTemplate in
-            var copy = template
-            SyncMetadata.stampSave(&copy)
-            return copy
-        }
-        local.save(stamped)
-        cloud.save(stamped)
+        local.save(templates)
+        cloud.save(templates)
     }
 }
 
@@ -96,13 +88,8 @@ struct SyncingWeeklyTemplateStore: WeeklyTemplateStore {
     }
 
     func save(_ templates: [WeeklyTemplate]) {
-        let stamped = templates.map { template -> WeeklyTemplate in
-            var copy = template
-            SyncMetadata.stampSave(&copy)
-            return copy
-        }
-        local.save(stamped)
-        cloud.save(stamped)
+        local.save(templates)
+        cloud.save(templates)
     }
 }
 
@@ -130,13 +117,72 @@ struct SyncingUnattachedRunStore: UnattachedRunStore {
     }
 
     func save(_ runs: [UnattachedRun]) {
-        let stamped = runs.map { run -> UnattachedRun in
-            var copy = run
-            SyncMetadata.stampSave(&copy)
-            return copy
-        }
-        local.save(stamped)
-        cloud.save(stamped)
+        local.save(runs)
+        cloud.save(runs)
+    }
+}
+
+struct SyncingImportedHealthWorkoutReferenceStore: ImportedHealthWorkoutReferenceStore {
+    private let local: ImportedHealthWorkoutReferenceStore
+    private let cloud: ImportedHealthWorkoutReferenceStore
+
+    init(
+        local: ImportedHealthWorkoutReferenceStore = FileImportedHealthWorkoutReferenceStore(),
+        cloud: ImportedHealthWorkoutReferenceStore = CloudImportedHealthWorkoutReferenceStore()
+    ) {
+        self.local = local
+        self.cloud = cloud
+    }
+
+    func loadReferences() -> [ImportedHealthWorkoutReference] {
+        let localRefs = local.loadReferences()
+        let cloudRefs = cloud.loadReferences()
+        let merged = SyncRecordMerge.mergeByID(
+            local: localRefs,
+            remote: cloudRefs,
+            id: \.id,
+            updatedAt: \.updatedAt,
+            isDeleted: \.isDeleted
+        )
+        local.save(merged)
+        return merged
+    }
+
+    func save(_ references: [ImportedHealthWorkoutReference]) {
+        local.save(references)
+        cloud.save(references)
+    }
+}
+
+struct SyncingPeriodizedBlockStore: PeriodizedBlockStore {
+    private let local: PeriodizedBlockStore
+    private let cloud: PeriodizedBlockStore
+
+    init(
+        local: PeriodizedBlockStore = FilePeriodizedBlockStore(),
+        cloud: PeriodizedBlockStore = CloudPeriodizedBlockStore()
+    ) {
+        self.local = local
+        self.cloud = cloud
+    }
+
+    func loadBlocks() -> [PeriodizedBlockTemplate] {
+        let localBlocks = local.loadBlocks()
+        let cloudBlocks = cloud.loadBlocks()
+        let merged = SyncRecordMerge.mergeByID(
+            local: localBlocks,
+            remote: cloudBlocks,
+            id: \.id,
+            updatedAt: \.updatedAt,
+            isDeleted: \.isDeleted
+        )
+        local.save(merged)
+        return merged
+    }
+
+    func save(_ blocks: [PeriodizedBlockTemplate]) {
+        local.save(blocks)
+        cloud.save(blocks)
     }
 }
 
@@ -158,10 +204,8 @@ struct SyncingWeekPlanStore: WeekPlanStore {
     }
 
     func save(_ week: WeekPlan, start: Date) {
-        var stamped = week
-        SyncMetadata.stampSave(&stamped)
-        local.save(stamped, start: start)
-        cloud.save(stamped, start: start)
+        local.save(week, start: start)
+        cloud.save(week, start: start)
     }
 
     func fileURL(for start: Date) -> URL {

@@ -1,14 +1,9 @@
 import SwiftUI
-import HealthKit
 
 struct WeekPlannerView: View {
     @ObservedObject var viewModel: WeekPlannerViewModel
     @ObservedObject var templatesViewModel: TemplateLibraryViewModel
-    @State private var showingTemplatePicker = false
-    @State private var templatePickerDate: Date?
-    @State private var templatePickerActivityType: ActivityType?
-    @State private var templatePickerTimePeriod: TimePeriod = .am
-    @State private var hasStartedHKObserver = false
+    @State private var templatePickerContext: TemplatePickerContext?
     @State private var previousUnattachedCount: Int = 0
     @State private var showingUnattachedSheet = false
     @State private var showingWeeklyTemplatePicker = false
@@ -25,6 +20,16 @@ struct WeekPlannerView: View {
     @State private var showingMoveConfirm = false
     @State private var pasteTargetDate: Date?
     @State private var showingPasteModeAlert = false
+    @State private var showingPeriodizedBlockPicker = false
+    @State private var selectedPeriodizedBlock: PeriodizedBlockTemplate?
+    @State private var showingApplyPeriodizedAlert = false
+
+    private var plannerNavigationTitle: String {
+        if let name = viewModel.weekPlan.appliedPeriodizedWeekName, !name.isEmpty {
+            return name
+        }
+        return "This Week"
+    }
 
     var body: some View {
         List {
@@ -32,7 +37,7 @@ struct WeekPlannerView: View {
             weeklyTotalsSection
             daysSection
         }
-        .navigationTitle("This Week")
+        .navigationTitle(plannerNavigationTitle)
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarLeading) {
                 Button {
@@ -40,6 +45,7 @@ struct WeekPlannerView: View {
                 } label: {
                     Image(systemName: "chevron.left")
                 }
+                .accessibilityLabel("Previous week")
             }
             ToolbarItemGroup(placement: .navigationBarTrailing) {
                 Menu {
@@ -49,6 +55,13 @@ struct WeekPlannerView: View {
                         Label("Apply Weekly Template", systemImage: "rectangle.stack.badge.plus")
                     }
                     .disabled(viewModel.activeWeeklyTemplates.isEmpty)
+
+                    Button {
+                        showingPeriodizedBlockPicker = true
+                    } label: {
+                        Label("Apply Periodized Block", systemImage: "calendar.badge.clock")
+                    }
+                    .disabled(viewModel.activePeriodizedBlocks.isEmpty)
 
                     Button {
                         saveTemplateName = ""
@@ -61,18 +74,18 @@ struct WeekPlannerView: View {
                 } label: {
                     Image(systemName: "rectangle.stack")
                 }
-                .accessibilityLabel("Weekly templates")
+                .accessibilityLabel("Templates and blocks")
 
                 Button {
                     viewModel.goToNextWeek(templates: templatesViewModel.activeTemplates)
                 } label: {
                     Image(systemName: "chevron.right")
                 }
+                .accessibilityLabel("Next week")
             }
         }
         .onAppear {
             viewModel.dedupeUnattachedRuns()
-            startHealthKitObserverIfNeeded()
         }
         .onChange(of: viewModel.activeUnattachedRuns.count) { newCount in
             if newCount > previousUnattachedCount {
@@ -80,8 +93,8 @@ struct WeekPlannerView: View {
             }
             previousUnattachedCount = newCount
         }
-        .sheet(isPresented: $showingTemplatePicker) {
-            modalityTemplatePickerSheet
+        .sheet(item: $templatePickerContext) { context in
+            modalityTemplatePickerSheet(for: context)
         }
         .sheet(isPresented: $showingUnattachedSheet) {
             NavigationStack {
@@ -131,6 +144,35 @@ struct WeekPlannerView: View {
                         Button("Cancel") {
                             showingWeeklyTemplatePicker = false
                         }
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showingPeriodizedBlockPicker) {
+            NavigationStack {
+                List {
+                    ForEach(viewModel.activePeriodizedBlocks) { block in
+                        Button {
+                            selectedPeriodizedBlock = block
+                            showingPeriodizedBlockPicker = false
+                            showingApplyPeriodizedAlert = true
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(block.name)
+                                    .font(.body.weight(.semibold))
+                                    .foregroundColor(.primary)
+                                Text("\(block.weekCount) weeks · \(block.weeks.map(\.displayName).joined(separator: " → "))")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                    }
+                }
+                .navigationTitle("Apply Periodized Block")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { showingPeriodizedBlockPicker = false }
                     }
                 }
             }
@@ -222,6 +264,36 @@ struct WeekPlannerView: View {
                 Text("You have existing workouts this week. Choose to override them or keep them alongside '\(template.name)'.")
             } else {
                 Text("This will apply '\(template.name)' to the current week.")
+            }
+        }
+        .alert("Apply Periodized Block?", isPresented: $showingApplyPeriodizedAlert, presenting: selectedPeriodizedBlock) { block in
+            let hasConflicts = viewModel.periodizedBlockRangeHasWorkouts(
+                startingAt: viewModel.currentStartOfWeek,
+                weekCount: block.weekCount
+            )
+            if hasConflicts {
+                Button("Merge") {
+                    viewModel.applyPeriodizedBlock(block, startingAt: viewModel.currentStartOfWeek, keepExisting: true)
+                }
+                Button("Overwrite", role: .destructive) {
+                    viewModel.applyPeriodizedBlock(block, startingAt: viewModel.currentStartOfWeek, keepExisting: false)
+                }
+                Button("Cancel", role: .cancel) {}
+            } else {
+                Button("Apply") {
+                    viewModel.applyPeriodizedBlock(block, startingAt: viewModel.currentStartOfWeek, keepExisting: true)
+                }
+                Button("Cancel", role: .cancel) {}
+            }
+        } message: { block in
+            let hasConflicts = viewModel.periodizedBlockRangeHasWorkouts(
+                startingAt: viewModel.currentStartOfWeek,
+                weekCount: block.weekCount
+            )
+            if hasConflicts {
+                Text("“\(block.name)” spans \(block.weekCount) weeks from this Plan week. Existing workouts found — Merge keeps them, Overwrite replaces them.")
+            } else {
+                Text("Apply “\(block.name)” (\(block.weekCount) weeks) starting from this Plan week?")
             }
         }
         .alert("Move workout?", isPresented: $showingMoveConfirm) {
@@ -444,6 +516,9 @@ struct WeekPlannerView: View {
                 onNoteChange: { note in
                     viewModel.setWorkoutNote(workoutID: workout.id, note: note)
                 },
+                onTitleChange: { title in
+                    viewModel.setWorkoutTitle(workoutID: workout.id, title: title)
+                },
                 onCompleteStatus: {
                     viewModel.setWorkoutStatus(workoutID: workout.id, status: .completed)
                 },
@@ -460,7 +535,7 @@ struct WeekPlannerView: View {
         } else if workout.activityType.sessionKind == .run {
             RunDetailView(
                 workout: workout,
-                onSave: { title, category, plannedDistance, plannedDuration, plannedElevation, status, actualDistance, actualDuration, actualElevation, timePeriod in
+                onSave: { title, activityType, category, plannedDistance, plannedDuration, plannedElevation, status, actualDistance, actualDuration, actualElevation, timePeriod, notes in
                     viewModel.updateEnduranceWorkout(
                         workoutID: workout.id,
                         title: title,
@@ -472,18 +547,20 @@ struct WeekPlannerView: View {
                         actualDistance: actualDistance,
                         actualDuration: actualDuration,
                         actualElevation: actualElevation,
-                        timePeriod: timePeriod
+                        timePeriod: timePeriod,
+                        activityType: activityType,
+                        notes: notes
                     )
                 }
             )
         } else {
             RideDetailView(
                 workout: workout,
-                onSave: { title, _, plannedDistance, plannedDuration, plannedElevation, status, actualDistance, actualDuration, actualElevation, timePeriod in
+                onSave: { title, category, plannedDistance, plannedDuration, plannedElevation, status, actualDistance, actualDuration, actualElevation, timePeriod, notes in
                     viewModel.updateEnduranceWorkout(
                         workoutID: workout.id,
                         title: title,
-                        runType: workout.runType,
+                        runType: category.flatMap(RunType.init(runCategory:)),
                         plannedDistance: plannedDistance,
                         plannedDuration: plannedDuration,
                         plannedElevation: plannedElevation,
@@ -491,7 +568,8 @@ struct WeekPlannerView: View {
                         actualDistance: actualDistance,
                         actualDuration: actualDuration,
                         actualElevation: actualElevation,
-                        timePeriod: timePeriod
+                        timePeriod: timePeriod,
+                        notes: notes
                     )
                 }
             )
@@ -506,32 +584,36 @@ struct WeekPlannerView: View {
     }
 
     private func openTemplatePicker(for activityType: ActivityType, on date: Date, timePeriod: TimePeriod) {
-        templatePickerDate = date
-        templatePickerActivityType = activityType
-        templatePickerTimePeriod = timePeriod
-        showingTemplatePicker = true
+        // Use sheet(item:) so Menu → sheet doesn't present with a stale nil activity type.
+        templatePickerContext = TemplatePickerContext(
+            date: date,
+            activityType: activityType,
+            timePeriod: timePeriod
+        )
     }
 
-    @ViewBuilder
-    private var modalityTemplatePickerSheet: some View {
+    private func modalityTemplatePickerSheet(for context: TemplatePickerContext) -> some View {
         NavigationStack {
             List {
-                if templatePickerActivityType == .strength {
+                if context.activityType == .strength {
+                    if templatesViewModel.activeTemplates.isEmpty {
+                        Text("No strength templates yet.")
+                            .foregroundStyle(.secondary)
+                    }
                     ForEach(templatesViewModel.activeTemplates) { template in
                         Button {
-                            if let date = templatePickerDate {
-                                viewModel.addStrengthSession(
-                                    template: template,
-                                    on: date,
-                                    timePeriod: templatePickerTimePeriod
-                                )
-                            }
-                            showingTemplatePicker = false
+                            viewModel.addStrengthSession(
+                                template: template,
+                                on: context.date,
+                                timePeriod: context.timePeriod
+                            )
+                            templatePickerContext = nil
                         } label: {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(template.name)
                                     .font(.body.weight(.semibold))
-                                if let note = template.note {
+                                    .foregroundStyle(.primary)
+                                if let note = template.note, !note.isEmpty {
                                     Text(note)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
@@ -539,21 +621,27 @@ struct WeekPlannerView: View {
                             }
                         }
                     }
-                } else if let activityType = templatePickerActivityType {
-                    ForEach(templatesViewModel.activeEnduranceTemplates.filter { $0.activityType == activityType }) { template in
+                } else {
+                    let matches = templatesViewModel.activeEnduranceTemplates.filter {
+                        $0.activityType == context.activityType
+                    }
+                    if matches.isEmpty {
+                        Text("No \(context.activityType.rawValue) templates yet.")
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(matches) { template in
                         Button {
-                            if let date = templatePickerDate {
-                                viewModel.addEnduranceSession(
-                                    template: template,
-                                    on: date,
-                                    timePeriod: templatePickerTimePeriod
-                                )
-                            }
-                            showingTemplatePicker = false
+                            viewModel.addEnduranceSession(
+                                template: template,
+                                on: context.date,
+                                timePeriod: context.timePeriod
+                            )
+                            templatePickerContext = nil
                         } label: {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(template.name)
                                     .font(.body.weight(.semibold))
+                                    .foregroundStyle(.primary)
                                 HStack {
                                     Text(template.activityType.rawValue)
                                     if let runType = template.runType {
@@ -572,22 +660,15 @@ struct WeekPlannerView: View {
                     }
                 }
             }
-            .navigationTitle(templatePickerTitle)
+            .navigationTitle("\(context.activityType.rawValue) Templates")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
-                        showingTemplatePicker = false
+                        templatePickerContext = nil
                     }
                 }
             }
         }
-    }
-
-    private var templatePickerTitle: String {
-        if let activityType = templatePickerActivityType {
-            return "\(activityType.rawValue) Templates"
-        }
-        return "Select template"
     }
 
     private func dayHeader(for date: Date) -> String {
@@ -595,17 +676,13 @@ struct WeekPlannerView: View {
         let short = shortDayFormatter.string(from: date)
         return "\(short) • \(dayString)"
     }
+}
 
-    private func startHealthKitObserverIfNeeded() {
-        guard !hasStartedHKObserver, HKHealthStore.isHealthDataAvailable() else { return }
-        hasStartedHKObserver = true
-        let threeDaysAgo = Calendar.current.date(byAdding: .day, value: -3, to: Date())
-        HealthKitManager.shared.startObservingRuns {
-            HealthKitManager.shared.fetchRecentRuns(since: threeDaysAgo) { runs in
-                viewModel.importUnattachedRuns(runs)
-            }
-        }
-    }
+private struct TemplatePickerContext: Identifiable {
+    let id = UUID()
+    let date: Date
+    let activityType: ActivityType
+    let timePeriod: TimePeriod
 }
 
 private let dayFormatter: DateFormatter = {
@@ -736,8 +813,8 @@ struct WorkoutRow: View {
 
     @ViewBuilder
     private var enduranceChip: some View {
-        if workout.activityType.sessionKind == .run, let cat = workout.runType?.runCategory {
-            chip(text: cat.rawValue, color: .blue)
+        if let cat = workout.runType?.runCategory {
+            chip(text: cat.rawValue, color: cat.tint)
         } else if workout.activityType == .bike {
             chip(text: "Bike", color: .orange)
         }

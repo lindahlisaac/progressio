@@ -139,35 +139,20 @@ PlannedSession
 | Component | File |
 |-----------|------|
 | HealthKit queries | `Services/HealthKitManager.swift` |
-| Import orchestration | `WeekPlannerViewModel.importUnattachedRuns`, `dedupeUnattachedRuns` |
+| Import service | `Services/HealthKitImportService.swift` |
+| Import orchestration | `WeekPlannerViewModel+HealthKitImport.swift` (`processHealthKitCandidates`) |
 | Manual import trigger | `Views/Settings/SettingsView.swift` ("Import last 7 days") |
-| Background observer trigger | `WeekPlannerView.startHealthKitObserverIfNeeded` |
-| Attach to planned session | `WeekPlannerViewModel.attachActualRun`, `UnattachedRunsView` |
+| Attach to planned / new | `WeekPlannerViewModel.attachActualRun`, `UnattachedRunsView` |
+| UUID reference store | `ImportedHealthWorkoutReference` + migration v6 |
 
-**Import flow:**
+**Import flow (current):**
 
-1. `HealthKitManager.fetchRecentRuns` queries running workouts, maps to `UnattachedRun` with `RunDetailData.hkWorkoutUUID`.
-2. Runs passed to `importUnattachedRuns`, which dedupes via `detailSignature` (HK UUID preferred, else SHA256 hash of date/title/distance/duration/HR/category).
-3. User attaches run to a day/session; `actualRun` populated, status set to completed.
-4. If no matching planned run, a new session is appended as completed with note "Imported from HealthKit".
+1. Settings → `fetchCandidatesForcingRefresh` → `HealthKitImportCandidate` with `hkWorkoutUUID`.
+2. `processHealthKitCandidates` skips known UUIDs (references, unattached, local week files) and appends new runs to **Unattached only**.
+3. User opens Plan → Unattached and attaches to a planned workout or creates a new day entry.
+4. No Plan `onAppear` observer / auto-apply (removed after duplicate calendar spam).
 
-**Known duplicate import paths (two entry points, one dedupe layer):**
-
-```
-Path A: SettingsView → fetchRecentRuns (7 days) → importUnattachedRuns
-Path B: WeekPlannerView.onAppear → startObservingRuns → fetchRecentRuns (3 days) → importUnattachedRuns
-```
-
-Both paths call the same dedupe logic, but:
-
-- `hasAttachedRun(with:)` exists in `WeekPlannerViewModel` but is **never called** — dead code intended for dedup at attach time.
-- Observer fires on every HealthKit update and re-fetches; dedupe should prevent list growth but users report duplicates (per `docs/AppleHealth.md`).
-- Each import creates a **new** `UnattachedRun.id` even when deduped at list level; CloudKit sync of unattached runs could resurrect duplicates across devices if signatures differ slightly.
-- No user confirmation before applying import to planned workout (docs require prompt).
-- No AM/PM matching logic.
-- Only **running** workouts imported; no cycling/walking.
-- Strength logs and HK references are not modeled as `ImportedHealthWorkoutReference`.
-
+**Recovery:** Settings → Clean up duplicate imports strips `appleHealth` / `.imported` calendar rows across weeks and restores unique UUIDs to Unattached.
 ---
 
 ## iCloud / CloudKit Sync Implementation
@@ -459,58 +444,126 @@ For each completed task, record **what shipped** and a **Major decisions** subse
 **Major decisions**
 - Gap-fill only — no screen rewrite; acceptance criteria were largely already met.
 
-### Next up — Task 017
+### Task 017 — Weekly Templates Polish
 
-- Weekly templates polish (then HealthKit 018–020).
+- Blank add menus include all `plannerAddTypes` (Road/Trail/Walk/Bike/Strength).
+- Strength entries in weekly template preview navigate to read-only routine snapshot detail.
+- Save-from-week, apply conflict prompt, and soft delete already in place from Task 010.
 
----
+**Major decisions**
+- Shared `WeeklyTemplateWorkoutEntry.blank(activityType:)` helper so create and edit menus stay in sync with planner modalities.
 
-## Files Likely Modified in Next Tasks
+### Task 018 — Consolidate HealthKit Import Pipeline
 
-### Task 002 (Workout Types and Metadata)
+- `HealthKitImportService` is the single entry point for Settings import (shared 7-day lookback).
+- `HealthKitManager` maps `HKWorkout` → `HealthKitImportCandidate`; views no longer call import mapping directly.
+- Plan no longer starts a HealthKit observer or auto-fetches on appear (caused launch freezes + duplicate calendar writes).
 
-| File | Reason |
-|------|--------|
-| New `Models/` files (recommended) | `Workout`, value types, enums, `LegacySessionMapper` |
-| `Models/Models.swift` | Unchanged legacy types remain in use until Task 007 |
+**Major decisions**
+- Consolidated lookback to 7 days in one constant.
+- Fingerprint short-circuit remains for forced refetch noise; Settings uses `fetchCandidatesForcingRefresh`.
+- **Rollback (post-020):** import is Settings-triggered only; no background observer on Plan.
 
-### Task 003 (Migration Infrastructure)
+### Task 019 — Apple Health UUID Dedup
 
-| File | Reason |
-|------|--------|
-| New `Services/Migration/` files | Migration runner, version gate, step protocol |
+- `ImportedHealthWorkoutReference` persisted locally + CloudKit; migration v6 seeds from existing linked/unattached UUIDs and soft-deletes duplicate unattached rows.
+- Import skips when UUID exists in references, attached workouts (local week files), or unattached list.
+- Known-UUID scan uses `FileWeekPlanStore` only (no CloudKit week fetches during import).
 
-### Tasks 004–006 (migration + sync metadata)
+**Major decisions**
+- Reference table is the durable idempotency key; signature hashing remains only for UUID-less fallback/unattached paths.
+- Local-only week scan avoids SyncingWeekPlanStore freezes and stale merge re-adds.
 
-| File | Reason |
-|------|--------|
-| `Services/Storage.swift` | Dual-read / migrated file formats |
-| `Services/SyncingStores.swift` | Merge logic for metadata and soft deletes |
-| `Services/CloudKitStores.swift` | Payload encoding, legacy CloudKit decode |
+### Task 020 — Apple Health Planned Matching
 
-### Task 007+ (likely touch)
+- **Rolled back to Unattached-first:** imports land in Plan → Unattached; user attaches manually (apply to planned or create new).
+- Auto calendar apply and AM/PM match confirmation dialogs removed from Plan/Settings.
+- Settings “Clean up duplicate imports” strips auto-imported calendar workouts across weeks and restores unique UUIDs to Unattached.
 
-| File | Reason |
-|------|--------|
-| `Models/Models.swift` | `DayPlan` / `WeekPlan` switch to `Workout` |
-| `ViewModels/WeekPlannerViewModel.swift` | Adapt to new workout type |
-| `ViewModels/TemplateLibraryViewModel.swift` | Template metadata fields |
-| `Views/WeekPlanner/WeekPlannerView.swift` | Session display, add-workout flow |
-| `Views/WeekPlanner/RunDetailView.swift` | Planned/completed field mapping |
-| `Views/WeekPlanner/RideDetailView.swift` | Same |
-| `Views/WeekPlanner/StrengthLogView.swift` | Snapshot vs template link |
-| `Views/Templates/TemplateLibraryScreen.swift` | Template types UI |
-| `Views/Templates/WeeklyTemplate*.swift` | Weekly template structure |
-| `Services/HealthKitManager.swift` | Import model alignment (Task 018+) |
-| `Views/Settings/SettingsView.swift` | Import/sync settings |
-| `App/ContentView.swift` | History tab (Task 022) |
+**Major decisions**
+- Manual attach is the product path until auto-match feels reliable; avoids silent overwrite and duplicate day spam.
+- Cleanup is destructive for `source == appleHealth` / `status == imported` calendar rows only; planned workouts stay.
 
-### Candidates for removal or cleanup (later)
+### Task 021 — Strength Log Cloud Sync
 
-| File | Reason |
-|------|--------|
-| `Services/Persistence.swift` | Unused Core Data scaffold |
-| `progressio.xcdatamodeld` | Unused unless pivoting to Core Data |
+- Strength logging writes `completedValues.completedStrengthRoutineSnapshot` on the workout (syncs with week plan).
+- Migration v7 embeds legacy `strengthlog-*.json` into workouts and removes standalone files.
+- `StrengthLogView` no longer writes strength log files in the production path.
+
+**Major decisions**
+- Option A (embed in workout) over a separate CloudKit strength-log store — week plan stays the sync unit.
+- Mid-session edits persist the completed snapshot without forcing `completedAt` until the user marks complete.
+
+### Task 022 — History Tab
+
+- New History tab: Plan → Templates → History → Settings (Week renamed to Plan).
+- Reverse-chronological list of completed, partial, and imported workouts across on-disk weeks; soft-deleted hidden.
+- Detail reuses Run/Ride/Strength views via week-scoped mutate.
+
+**Major decisions**
+- Scan `weekplan-*.json` via `WeekPlanFileIndex` rather than a separate history index for v1.
+- Skipped/planned-only workouts excluded from History.
+
+### Follow-ups after 017–022 (non-blocking)
+
+- **Match dialog** — no Cancel; user must Apply or Create new (intentional for solo use). Easy later change: dismiss → decline.
+- **Settings import QA** — UUID imports land on Plan calendar (or match prompt), not Unattached. Unattached is for UUID-less / manual attach / detach. Verify via Plan/History, not only Unattached count.
+- **Week export/import** — export prefers embedded strength snapshots (legacy file fallback only if missing); import no longer writes `strengthlog-*.json`.
+- **History scope** — scans local `weekplan-*.json` only; CloudKit-only weeks appear after a local pull (expected v1).
+- **Strength mid-session** — writes `completedValues` while status may still be `.planned` (sync); History correctly excludes until completed/partial/imported.
+
+### Task 023 — Settings and Data Tools
+
+- Last HealthKit import timestamp + iCloud last-sync status in Settings.
+- Duplicate import cleanup (confirmation; soft-delete UUID duplicates only).
+- Export prefers embedded strength snapshots; import no longer writes `strengthlog-*.json`.
+- Import footer clarifies Plan/History vs Unattached.
+
+**Major decisions**
+- Sync/import timestamps in UserDefaults (lightweight; not CloudKit metadata).
+- Cleanup never soft-deletes non-import planned workouts.
+
+### Task 024 — Periodized Block Models
+
+- `PeriodizedBlockTemplate` / `PeriodizedBlockWeek` with weekCount 2–12, default Week N names, daySnapshots + optional linkedWeeklyTemplateId.
+- JSON + CloudKit (`periodizedBlocks.json` / `PeriodizedBlockTemplate` record).
+- Week plan carries `appliedPeriodizedWeekName` / `appliedPeriodizedBlockId` for planner display.
+
+**Major decisions**
+- Linking a weekly template snapshots days into the block (independence from later weekly-template edits).
+- `manuallyConstructedWeek` legacy decode key accepted; encode uses `daySnapshots`.
+
+### Task 025 — Periodized Block UI
+
+- Templates tab **Blocks** segment: create/edit/rename weeks, link weekly templates, soft-delete.
+- Detail preview lists day workouts per block week.
+
+**Major decisions**
+- Reuse weekly template list for linking rather than a full inline day builder in v1 (clear week + link covers rest vs template weeks).
+
+### Task 026 — Apply Periodized Blocks
+
+- Apply from Templates swipe or Plan toolbar; conflict scan across full multi-week range before writes.
+- Merge / Overwrite / Cancel; new workout IDs; `linkedPeriodizedBlockId` set; week name shown as Plan navigation title.
+
+**Major decisions**
+- Start week = currently viewed Plan week (same mental model as weekly template apply).
+- Overwrite soft-deletes existing actives per week, matching weekly template overwrite.
+
+### Task 027 — Final Polish and Release Checklist
+
+- Removed unused Core Data `Persistence.swift` + `progressio.xcdatamodeld`.
+- Accessibility labels on Plan week navigation and template add.
+- HealthKit / iCloud entitlements and usage strings already present in project settings.
+- Build succeeds; overhaul task track 001–027 complete.
+
+**Major decisions**
+- Release-blocking items from 027 checklist remain manual QA; no known duplicate-HK or template-mutation regressions introduced in this pass.
+- Dead `PersistenceController` removed rather than left as scaffold.
+
+### Overhaul complete
+
+Next work is product polish / App Store submission QA per Task 027 checklist (manual).
 
 ---
 
@@ -518,27 +571,16 @@ For each completed task, record **what shipped** and a **Major decisions** subse
 
 ```
 progressio/progressio/
-├── App/
-│   ├── progressioApp.swift          # App entry (no persistence wiring)
-│   └── ContentView.swift            # Tab shell
-├── Models/
-│   └── Models.swift                 # All domain types
-├── ViewModels/
-│   ├── WeekPlannerViewModel.swift   # Planner + import + sync orchestration
-│   └── TemplateLibraryViewModel.swift
-├── Services/
-│   ├── Storage.swift                # File stores + protocols
-│   ├── CloudKitStores.swift         # CloudKit backing
-│   ├── SyncingStores.swift          # Local/cloud merge
-│   ├── HealthKitManager.swift       # HK read + observer
-│   └── Persistence.swift            # Unused Core Data
-└── Views/
-    ├── WeekPlanner/                 # Planner UI (6 files)
-    ├── Templates/                   # Template library UI (3 files)
-    ├── Reports/WeeklyReportView.swift
-    └── Settings/SettingsView.swift
+├── App/ContentView.swift            # Plan / Templates / History / Settings
+├── Models/PeriodizedBlockTemplate.swift
+├── Models/ImportedHealthWorkoutReference.swift
+├── Services/HealthKitImportService.swift
+├── ViewModels/WeekPlannerViewModel+PeriodizedBlocks.swift
+├── Views/History/HistoryView.swift
+├── Views/Templates/PeriodizedBlockViews.swift
+└── … (stores, migration through v7)
 ```
 
 ---
 
-*Last updated: Task 016 complete.*
+*Last updated: Tasks 023–027 complete — mega-overhaul track finished.*

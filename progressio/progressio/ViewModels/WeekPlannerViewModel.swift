@@ -4,10 +4,12 @@ import CryptoKit
 import Combine
 
 final class WeekPlannerViewModel: ObservableObject {
-    private let calendar: Calendar
-    private let weekStore: WeekPlanStore
+    let calendar: Calendar
+    let weekStore: WeekPlanStore
     private let unattachedStore: UnattachedRunStore
     private let weeklyTemplateStore: WeeklyTemplateStore
+    private let importedHealthStore: ImportedHealthWorkoutReferenceStore
+    let periodizedBlockStore: PeriodizedBlockStore
     private let isoFormatter: ISO8601DateFormatter = {
         let fmt = ISO8601DateFormatter()
         fmt.formatOptions = [.withFullDate]
@@ -18,6 +20,12 @@ final class WeekPlannerViewModel: ObservableObject {
     @Published var currentStartOfWeek: Date
     @Published private(set) var unattachedRuns: [UnattachedRun] = []
     @Published private(set) var weeklyTemplates: [WeeklyTemplate] = []
+    @Published var importedHealthReferences: [ImportedHealthWorkoutReference] = []
+    @Published var periodizedBlocks: [PeriodizedBlockTemplate] = []
+    @Published var lastHealthKitImportAt: Date?
+    @Published var lastSyncAt: Date?
+    @Published var lastSyncMessage: String?
+    var inflightHealthKitUUIDs: Set<String> = []
 
     var activeWeeklyTemplates: [WeeklyTemplate] {
         weeklyTemplates.filter { !$0.isDeleted }
@@ -31,11 +39,15 @@ final class WeekPlannerViewModel: ObservableObject {
          templates: [StrengthTemplate],
          weekStore: WeekPlanStore = SyncingWeekPlanStore(),
          unattachedStore: UnattachedRunStore = SyncingUnattachedRunStore(),
-         weeklyTemplateStore: WeeklyTemplateStore = SyncingWeeklyTemplateStore()) {
+         weeklyTemplateStore: WeeklyTemplateStore = SyncingWeeklyTemplateStore(),
+         importedHealthStore: ImportedHealthWorkoutReferenceStore = SyncingImportedHealthWorkoutReferenceStore(),
+         periodizedBlockStore: PeriodizedBlockStore = SyncingPeriodizedBlockStore()) {
         self.calendar = calendar
         self.weekStore = weekStore
         self.unattachedStore = unattachedStore
         self.weeklyTemplateStore = weeklyTemplateStore
+        self.importedHealthStore = importedHealthStore
+        self.periodizedBlockStore = periodizedBlockStore
         let start = calendar.startOfWeek(for: Date())
         self.currentStartOfWeek = start
         if let loaded = weekStore.loadWeek(start: start) {
@@ -47,8 +59,17 @@ final class WeekPlannerViewModel: ObservableObject {
         }
         self.unattachedRuns = unattachedStore.loadRuns()
         self.weeklyTemplates = weeklyTemplateStore.loadTemplates()
+        self.importedHealthReferences = importedHealthStore.loadReferences()
+        self.periodizedBlocks = periodizedBlockStore.loadBlocks()
+        self.lastHealthKitImportAt = UserDefaults.standard.object(forKey: Self.lastHealthKitImportKey) as? Date
+        self.lastSyncAt = UserDefaults.standard.object(forKey: Self.lastSyncKey) as? Date
+        self.lastSyncMessage = UserDefaults.standard.string(forKey: Self.lastSyncMessageKey)
         dedupeUnattachedRuns()
     }
+
+    private static let lastHealthKitImportKey = "progressio.lastHealthKitImportAt"
+    private static let lastSyncKey = "progressio.lastSyncAt"
+    private static let lastSyncMessageKey = "progressio.lastSyncMessage"
 
     func goToPreviousWeek(templates: [StrengthTemplate]) {
         guard let newStart = calendar.date(byAdding: .day, value: -7, to: currentStartOfWeek) else { return }
@@ -348,6 +369,11 @@ final class WeekPlannerViewModel: ObservableObject {
         for dayIdx in weekPlan.days.indices {
             if let workoutIndex = weekPlan.days[dayIdx].workouts.firstIndex(where: { $0.id == workoutID }) {
                 weekPlan.days[dayIdx].workouts[workoutIndex].status = status
+                if status == .completed || status == .partiallyCompleted {
+                    if weekPlan.days[dayIdx].workouts[workoutIndex].completedValues.completedAt == nil {
+                        weekPlan.days[dayIdx].workouts[workoutIndex].completedValues.completedAt = Date()
+                    }
+                }
                 if let note {
                     let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
                     if status == .skipped {
@@ -375,13 +401,23 @@ final class WeekPlannerViewModel: ObservableObject {
         }
     }
 
+    func setWorkoutTitle(workoutID: UUID, title: String) {
+        for dayIdx in weekPlan.days.indices {
+            if let workoutIndex = weekPlan.days[dayIdx].workouts.firstIndex(where: { $0.id == workoutID }) {
+                let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                weekPlan.days[dayIdx].workouts[workoutIndex].title =
+                    trimmed.isEmpty ? ActivityType.strength.defaultTitle : trimmed
+                weekPlan.days[dayIdx].workouts[workoutIndex].touchUpdatedAt()
+                persistWeek()
+                break
+            }
+        }
+    }
+
     func updateCompletedStrengthSnapshot(workoutID: UUID, snapshot: StrengthRoutineSnapshot) {
         for dayIdx in weekPlan.days.indices {
             if let workoutIndex = weekPlan.days[dayIdx].workouts.firstIndex(where: { $0.id == workoutID }) {
                 weekPlan.days[dayIdx].workouts[workoutIndex].completedValues.completedStrengthRoutineSnapshot = snapshot
-                if weekPlan.days[dayIdx].workouts[workoutIndex].completedValues.completedAt == nil {
-                    weekPlan.days[dayIdx].workouts[workoutIndex].completedValues.completedAt = Date()
-                }
                 weekPlan.days[dayIdx].workouts[workoutIndex].touchUpdatedAt()
                 persistWeek()
                 break
@@ -400,7 +436,9 @@ final class WeekPlannerViewModel: ObservableObject {
         actualDistance: String? = nil,
         actualDuration: String? = nil,
         actualElevation: String? = nil,
-        timePeriod: TimePeriod? = nil
+        timePeriod: TimePeriod? = nil,
+        activityType: ActivityType? = nil,
+        notes: String? = nil
     ) {
         for dayIdx in weekPlan.days.indices {
             if let workoutIndex = weekPlan.days[dayIdx].workouts.firstIndex(where: { $0.id == workoutID }) {
@@ -415,7 +453,9 @@ final class WeekPlannerViewModel: ObservableObject {
                     actualDuration: actualDuration,
                     actualElevation: actualElevation,
                     status: status,
-                    timePeriod: timePeriod
+                    timePeriod: timePeriod,
+                    activityType: activityType,
+                    notes: notes
                 )
                 persistWeek()
                 break
@@ -425,13 +465,16 @@ final class WeekPlannerViewModel: ObservableObject {
 
     func attachActualRun(to day: Date, run: UnattachedRun, toWorkoutID: UUID? = nil) {
         guard let dayIndex = weekPlan.days.firstIndex(where: { calendar.isDate($0.date, inSameDayAs: day) }) else { return }
+        var linkedWorkoutID: UUID?
         if let targetID = toWorkoutID,
            let workoutIndex = weekPlan.days[dayIndex].workouts.firstIndex(where: { $0.id == targetID }) {
             WorkoutEditing.applyAttachedRun(run.detail, to: &weekPlan.days[dayIndex].workouts[workoutIndex])
+            linkedWorkoutID = targetID
         } else if let workoutIndex = weekPlan.days[dayIndex].workouts.firstIndex(where: {
             $0.activityType.sessionKind == .run && $0.hasPlannedEnduranceDetail && !$0.hasCompletedEnduranceDetail
         }) {
             WorkoutEditing.applyAttachedRun(run.detail, to: &weekPlan.days[dayIndex].workouts[workoutIndex])
+            linkedWorkoutID = weekPlan.days[dayIndex].workouts[workoutIndex].id
         } else {
             var workout = Workout.run(
                 plannedDate: day,
@@ -440,8 +483,18 @@ final class WeekPlannerViewModel: ObservableObject {
                 notes: "Imported from HealthKit"
             )
             WorkoutEditing.applyAttachedRun(run.detail, to: &workout)
+            linkedWorkoutID = workout.id
             weekPlan.days[dayIndex].workouts.append(workout)
         }
+        if let uuid = run.detail.hkWorkoutUUID {
+            recordImportedReference(
+                healthKitUUID: uuid,
+                linkedWorkoutId: linkedWorkoutID,
+                activityType: .roadRun,
+                workoutStartDate: run.date
+            )
+        }
+        removeUnattachedRun(id: run.id)
         persistWeek()
     }
 
@@ -536,13 +589,23 @@ final class WeekPlannerViewModel: ObservableObject {
         weeklyTemplateStore.save(weeklyTemplates)
     }
 
-    private func hasAttachedRun(with uuid: String) -> Bool {
+    func hasAttachedRun(with uuid: String) -> Bool {
+        let normalized = uuid.lowercased()
         for day in weekPlan.days {
             for workout in day.activeWorkouts where workout.activityType.sessionKind == .run {
-                if workout.linkedHealthKitUUID == uuid { return true }
+                if workout.linkedHealthKitUUID?.lowercased() == normalized { return true }
             }
         }
         return false
+    }
+
+    func persistImportedHealthReferences() {
+        importedHealthReferences = importedHealthReferences.map { reference in
+            var stamped = reference
+            SyncMetadata.stampSave(&stamped)
+            return stamped
+        }
+        importedHealthStore.save(importedHealthReferences)
     }
 
     private func detailSignature(_ detail: RunDetailData, fallbackDate: Date?) -> String {
@@ -691,7 +754,11 @@ final class WeekPlannerViewModel: ObservableObject {
                 for workoutIdx in exportPlan.days[dayIdx].workouts.indices {
                     let workout = exportPlan.days[dayIdx].workouts[workoutIdx]
                     guard workout.activityType == .strength else { continue }
-
+                    // Prefer embedded snapshot; fall back to legacy file only if missing.
+                    if workout.completedValues.completedStrengthRoutineSnapshot != nil {
+                        strengthLogsIncluded += 1
+                        continue
+                    }
                     let logURL = StrengthLogPersistence.strengthLogURL(for: workout.id)
                     if let log = StrengthLogPersistence.load(from: logURL) {
                         exportPlan.days[dayIdx].workouts[workoutIdx].completedValues.completedStrengthRoutineSnapshot =
@@ -708,9 +775,7 @@ final class WeekPlannerViewModel: ObservableObject {
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("weekplan-\(isoFormatter.string(from: currentStartOfWeek)).json")
             try data.write(to: url, options: .atomic)
             print("📤 Exported week to: \(url.path)")
-            print("   Days: \(exportPlan.days.count)")
-            print("   Total workouts: \(exportPlan.days.flatMap { $0.workouts }.count)")
-            print("   Strength logs included: \(strengthLogsIncluded)")
+            print("   Strength snapshots included: \(strengthLogsIncluded)")
             return url
         } catch {
             print("❌ Failed to export week: \(error)")
@@ -730,27 +795,11 @@ final class WeekPlannerViewModel: ObservableObject {
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
             let imported = try decoder.decode(WeekPlan.self, from: data)
-            print("✅ Successfully decoded WeekPlan with \(imported.days.count) days")
-            print("   Start of week: \(imported.startOfWeek)")
-            print("   Total workouts: \(imported.days.flatMap { $0.workouts }.count)")
-
-            var strengthLogsRestored = 0
-            for day in imported.days {
-                for workout in day.workouts where workout.activityType == .strength {
-                    if let snapshot = workout.completedValues.completedStrengthRoutineSnapshot {
-                        let log = strengthLogState(from: snapshot, workout: workout)
-                        let logURL = StrengthLogPersistence.strengthLogURL(for: workout.id)
-                        try StrengthLogPersistence.save(log, to: logURL)
-                        strengthLogsRestored += 1
-                    }
-                }
-            }
-
+            // Snapshots travel with the week plan — no strengthlog-*.json rewrite.
             self.weekPlan = imported
             self.currentStartOfWeek = imported.startOfWeek
             persistWeek(for: imported.startOfWeek)
-            print("💾 Imported week persisted")
-            print("   Strength logs restored: \(strengthLogsRestored)")
+            print("💾 Imported week persisted (snapshots embedded)")
         } catch {
             print("❌ Failed to import week: \(error)")
         }
@@ -810,12 +859,12 @@ final class WeekPlannerViewModel: ObservableObject {
         return value
     }
 
-    private func persistWeek(for start: Date? = nil) {
+    func persistWeek(for start: Date? = nil) {
         weekPlan.updatedAt = Date()
         weekStore.save(weekPlan, start: start ?? currentStartOfWeek)
     }
 
-    private func persistWeek() {
+    func persistWeek() {
         persistWeek(for: currentStartOfWeek)
     }
 
@@ -824,10 +873,176 @@ final class WeekPlannerViewModel: ObservableObject {
         persistWeek()
         persistUnattached()
         persistWeeklyTemplates()
+        persistImportedHealthReferences()
+        persistPeriodizedBlocks()
         if let loaded = weekStore.loadWeek(start: currentStartOfWeek) {
             weekPlan = loaded
         }
         unattachedRuns = unattachedStore.loadRuns()
         weeklyTemplates = weeklyTemplateStore.loadTemplates()
+        importedHealthReferences = importedHealthStore.loadReferences()
+        periodizedBlocks = periodizedBlockStore.loadBlocks()
+        let now = Date()
+        lastSyncAt = now
+        lastSyncMessage = "Synced via CloudKit"
+        UserDefaults.standard.set(now, forKey: Self.lastSyncKey)
+        UserDefaults.standard.set(lastSyncMessage, forKey: Self.lastSyncMessageKey)
+    }
+
+    /// Soft-deletes duplicate unattached rows and strips auto-imported calendar workouts
+    /// (Apple Health / `.imported`) across all on-disk weeks, restoring unique UUIDs to Unattached
+    /// for manual attach. Planned workouts that are not imports are left alone.
+    @discardableResult
+    func cleanupDuplicateImports() -> Int {
+        var removed = 0
+        var recoveredByUUID: [String: UnattachedRun] = [:]
+
+        // Deduplicate unattached by HealthKit UUID (keep first).
+        var seenUnattached = Set<String>()
+        for index in unattachedRuns.indices {
+            guard !unattachedRuns[index].isDeleted,
+                  let uuid = unattachedRuns[index].detail.hkWorkoutUUID?.lowercased(),
+                  !uuid.isEmpty
+            else { continue }
+            if seenUnattached.contains(uuid) {
+                unattachedRuns[index] = SyncMetadata.softDelete(unattachedRuns[index])
+                removed += 1
+            } else {
+                seenUnattached.insert(uuid)
+                recoveredByUUID[uuid] = unattachedRuns[index]
+            }
+        }
+
+        let localWeeks = FileWeekPlanStore()
+        for weekStart in WeekPlanFileIndex.allWeekStarts() {
+            let isCurrent = calendar.isDate(weekStart, inSameDayAs: currentStartOfWeek)
+            var plan = isCurrent
+                ? weekPlan
+                : (localWeeks.loadWeek(start: weekStart) ?? WeekPlannerViewModel.makeEmptyWeek(calendar: calendar, start: weekStart))
+            var planChanged = false
+
+            for dayIdx in plan.days.indices {
+                for workoutIdx in plan.days[dayIdx].workouts.indices {
+                    let workout = plan.days[dayIdx].workouts[workoutIdx]
+                    guard !workout.metadata.isDeleted,
+                          workout.source == .appleHealth || workout.status == .imported
+                    else { continue }
+
+                    if let uuid = workout.linkedHealthKitUUID?.lowercased(), !uuid.isEmpty {
+                        if recoveredByUUID[uuid] == nil {
+                            let detail = WorkoutEditing.completedRunDetail(from: workout)
+                            recoveredByUUID[uuid] = UnattachedRun(
+                                detail: detail,
+                                date: plan.days[dayIdx].date,
+                                source: "Apple Health"
+                            )
+                        }
+                    }
+
+                    plan.days[dayIdx].workouts[workoutIdx] = SyncMetadata.softDelete(workout)
+                    removed += 1
+                    planChanged = true
+                }
+            }
+
+            if planChanged {
+                if isCurrent {
+                    weekPlan = plan
+                    persistWeek()
+                } else {
+                    localWeeks.save(plan, start: weekStart)
+                }
+            }
+        }
+
+        // Restore unique imports to Unattached and seed UUID references.
+        var unattachedChanged = removed > 0
+        for (uuid, run) in recoveredByUUID {
+            if !seenUnattached.contains(uuid) {
+                var stamped = run
+                SyncMetadata.stampNewRecord(&stamped)
+                unattachedRuns.append(stamped)
+                seenUnattached.insert(uuid)
+                unattachedChanged = true
+            }
+            recordImportedReference(
+                healthKitUUID: uuid,
+                linkedWorkoutId: nil,
+                activityType: .roadRun,
+                workoutStartDate: run.date
+            )
+        }
+        if unattachedChanged {
+            dedupeUnattachedRuns()
+            persistUnattached()
+        }
+        return removed
+    }
+
+    func recordHealthKitImportTimestamp() {
+        let now = Date()
+        lastHealthKitImportAt = now
+        UserDefaults.standard.set(now, forKey: Self.lastHealthKitImportKey)
+    }
+
+    // MARK: - History
+
+    struct HistoryEntry: Identifiable, Equatable {
+        var id: UUID { workout.id }
+        let weekStart: Date
+        let dayDate: Date
+        let workout: Workout
+    }
+
+    func historyEntries() -> [HistoryEntry] {
+        var entries: [HistoryEntry] = []
+        let weekStarts = WeekPlanFileIndex.allWeekStarts()
+        // Local files only — SyncingWeekPlanStore would CloudKit-fetch every week on each History appear.
+        let localWeeks = FileWeekPlanStore()
+        for weekStart in weekStarts {
+            let plan: WeekPlan
+            if calendar.isDate(weekStart, inSameDayAs: currentStartOfWeek) {
+                plan = weekPlan
+            } else if let loaded = localWeeks.loadWeek(start: weekStart) {
+                plan = loaded
+            } else {
+                continue
+            }
+            for day in plan.days {
+                for workout in day.activeWorkouts where Self.isHistoryEligible(workout) {
+                    entries.append(HistoryEntry(weekStart: weekStart, dayDate: day.date, workout: workout))
+                }
+            }
+        }
+        return entries.sorted { lhs, rhs in
+            let lhsDate = lhs.workout.completedValues.completedAt ?? lhs.dayDate
+            let rhsDate = rhs.workout.completedValues.completedAt ?? rhs.dayDate
+            return lhsDate > rhsDate
+        }
+    }
+
+    private static func isHistoryEligible(_ workout: Workout) -> Bool {
+        switch workout.status {
+        case .completed, .partiallyCompleted, .imported:
+            return true
+        case .planned, .skipped:
+            return false
+        }
+    }
+
+    func mutateWorkout(
+        weekStart: Date,
+        workoutID: UUID,
+        mutate: (inout Workout) -> Void
+    ) {
+        withWeek(containing: weekStart) { plan in
+            // withWeek uses date's week — weekStart is Monday; mutate across days.
+            for dayIdx in plan.days.indices {
+                if let workoutIndex = plan.days[dayIdx].workouts.firstIndex(where: { $0.id == workoutID }) {
+                    mutate(&plan.days[dayIdx].workouts[workoutIndex])
+                    return
+                }
+            }
+        }
     }
 }

@@ -69,17 +69,17 @@ The original roadmap assumed a greenfield data model refactor. The audit found:
 | 014 | `014-DragWorkoutsBetweenDays.md` | **Complete** |
 | 015 | `015-CopyPasteWorkouts.md` | **Complete** |
 | 016 | `016-TemplatesUIRefactor.md` | **Complete** |
-| 017 | `017-WeeklyTemplatesPolish.md` | Pending |
-| 018 | `018-ConsolidateHealthKitImportPipeline.md` | Pending |
-| 019 | `019-AppleHealthUUIDDedup.md` | Pending |
-| 020 | `020-AppleHealthPlannedMatching.md` | Pending |
-| 021 | `021-StrengthLogCloudSync.md` | Pending |
-| 022 | `022-HistoryTab.md` | Pending |
-| 023 | `023-SettingsAndDataTools.md` | Pending |
-| 024 | `024-PeriodizedBlockModels.md` | Pending |
-| 025 | `025-PeriodizedBlockUI.md` | Pending |
-| 026 | `026-ApplyPeriodizedBlocks.md` | Pending |
-| 027 | `027-FinalPolishAndReleaseChecklist.md` | Pending |
+| 017 | `017-WeeklyTemplatesPolish.md` | **Complete** |
+| 018 | `018-ConsolidateHealthKitImportPipeline.md` | **Complete** |
+| 019 | `019-AppleHealthUUIDDedup.md` | **Complete** |
+| 020 | `020-AppleHealthPlannedMatching.md` | **Complete** |
+| 021 | `021-StrengthLogCloudSync.md` | **Complete** |
+| 022 | `022-HistoryTab.md` | **Complete** |
+| 023 | `023-SettingsAndDataTools.md` | **Complete** |
+| 024 | `024-PeriodizedBlockModels.md` | **Complete** |
+| 025 | `025-PeriodizedBlockUI.md` | **Complete** |
+| 026 | `026-ApplyPeriodizedBlocks.md` | **Complete** |
+| 027 | `027-FinalPolishAndReleaseChecklist.md` | **Complete** |
 
 ## Task File Format
 

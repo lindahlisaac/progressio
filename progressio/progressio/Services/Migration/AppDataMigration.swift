@@ -20,8 +20,14 @@ enum AppDataMigration {
   /// Weekly templates use workout entry snapshots (Task 010).
   static let weeklyTemplateSnapshotsMigratedVersion = 5
 
+  /// HealthKit import UUID reference table (Task 019).
+  static let healthKitImportReferencesMigratedVersion = 6
+
+  /// Strength logs embedded in workout completed snapshots (Task 021).
+  static let strengthLogEmbedMigratedVersion = 7
+
   /// Highest migration step that runs in the current app release.
-  static let latestVersion = weeklyTemplateSnapshotsMigratedVersion
+  static let latestVersion = strengthLogEmbedMigratedVersion
 
   static let versionFileName = "dataVersion.json"
 }

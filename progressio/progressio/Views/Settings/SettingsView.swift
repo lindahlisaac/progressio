@@ -9,14 +9,36 @@ struct SettingsView: View {
     @State private var exportURL: URL?
     @State private var showingWeekImporter = false
     @State private var weekImportMessage: String?
-    @State private var syncMessage: String?
     @State private var isSyncing = false
+    @State private var showingDuplicateCleanupConfirm = false
+    @State private var cleanupMessage: String?
+
+    private var lastImportText: String {
+        guard let date = weekViewModel.lastHealthKitImportAt else {
+            return "No Apple Health import yet"
+        }
+        return "Last import: \(Self.dateTimeFormatter.string(from: date))"
+    }
+
+    private var syncStatusText: String {
+        if let error = weekViewModel.lastSyncMessage, error.lowercased().contains("fail") {
+            return error
+        }
+        if let date = weekViewModel.lastSyncAt {
+            let base = "Last sync: \(Self.dateTimeFormatter.string(from: date))"
+            if let message = weekViewModel.lastSyncMessage {
+                return "\(base) — \(message)"
+            }
+            return base
+        }
+        return weekViewModel.lastSyncMessage ?? "Not synced yet this session"
+    }
 
     var body: some View {
         List {
-            Section("HealthKit") {
+            Section {
                 Button {
-                    HealthKitManager.shared.requestAuthorization { success, error in
+                    HealthKitImportService.shared.requestAuthorization { success, error in
                         if let error {
                             print("HK auth error: \(error)")
                         } else {
@@ -32,7 +54,7 @@ struct SettingsView: View {
                         return
                     }
                     isImporting = true
-                    HealthKitManager.shared.requestAuthorization { success, error in
+                    HealthKitImportService.shared.requestAuthorization { success, error in
                         if let error {
                             importMessage = "Auth failed: \(error.localizedDescription)"
                             isImporting = false
@@ -43,16 +65,16 @@ struct SettingsView: View {
                             isImporting = false
                             return
                         }
-                        let start = Calendar.current.date(byAdding: .day, value: -7, to: Date())
-                        HealthKitManager.shared.fetchRecentRuns(since: start) { runs in
-                            weekViewModel.importUnattachedRuns(runs)
-                            importMessage = runs.isEmpty ? "No new runs found." : "Imported \(runs.count) run(s)."
+                        HealthKitImportService.shared.fetchCandidatesForcingRefresh { candidates in
+                            let summary = weekViewModel.processHealthKitCandidates(candidates)
+                            importMessage = summary.userMessage + " Open Plan → Unattached to attach them."
                             isImporting = false
                         }
                     }
                 } label: {
                     Label("Import last 7 days of runs", systemImage: "arrow.down.circle")
                 }
+                .accessibilityHint("Imports Apple Health runs into the Unattached list on Plan for manual attach")
                 if isImporting {
                     HStack {
                         ProgressView()
@@ -63,16 +85,52 @@ struct SettingsView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
+                Text(lastImportText)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Apple Health")
+            } footer: {
+                Text("Imports land in Plan → Unattached. Attach manually to a planned workout or create a new one. Already-imported HealthKit UUIDs are skipped.")
             }
-            Section("Coming soon") {
-                Label("Attach detected runs to planned days", systemImage: "bolt.heart")
-                Label("Log strength sets with weight/reps/RPE", systemImage: "list.bullet.clipboard")
+
+            Section("iCloud Sync") {
+                Text(syncStatusText)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Button {
+                    Task {
+                        isSyncing = true
+                        await weekViewModel.forceSync()
+                        isSyncing = false
+                    }
+                } label: {
+                    Label("Sync now", systemImage: "arrow.clockwise")
+                }
+                .disabled(isSyncing)
+                if isSyncing {
+                    HStack {
+                        ProgressView()
+                        Text("Syncing…")
+                    }
+                }
             }
-            Section("Maintenance") {
+
+            Section {
+                Button(role: .destructive) {
+                    showingDuplicateCleanupConfirm = true
+                } label: {
+                    Label("Clean up duplicate imports", systemImage: "doc.on.doc")
+                }
+                if let cleanupMessage {
+                    Text(cleanupMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
                 Button(role: .destructive) {
                     weekViewModel.clearUnattachedRuns()
                 } label: {
-                    Label("Clear imported runs", systemImage: "trash")
+                    Label("Clear unattached runs", systemImage: "trash")
                 }
                 .disabled(weekViewModel.activeUnattachedRuns.isEmpty)
                 if !weekViewModel.activeUnattachedRuns.isEmpty {
@@ -80,29 +138,13 @@ struct SettingsView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-                Button {
-                    Task {
-                        isSyncing = true
-                        syncMessage = nil
-                        await weekViewModel.forceSync()
-                        isSyncing = false
-                        syncMessage = "Synced via CloudKit"
-                    }
-                } label: {
-                    Label("Sync now", systemImage: "arrow.clockwise")
-                }
-                if isSyncing {
-                    HStack {
-                        ProgressView()
-                        Text("Syncing…")
-                    }
-                } else if let syncMessage {
-                    Text(syncMessage)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
+            } header: {
+                Text("Maintenance")
+            } footer: {
+                Text("Cleanup removes auto-imported calendar copies across weeks and restores unique HealthKit runs to Unattached. Planned workouts are not removed.")
             }
-            Section("Week data") {
+
+            Section {
                 Button {
                     exportURL = weekViewModel.exportCurrentWeek()
                     weekImportMessage = "Week exported successfully"
@@ -124,26 +166,47 @@ struct SettingsView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
+            } header: {
+                Text("Week data")
+            } footer: {
+                Text("Export includes embedded strength snapshots. Import restores the week JSON as-is.")
             }
         }
         .navigationTitle("Settings")
+        .confirmationDialog(
+            "Clean up duplicate imports?",
+            isPresented: $showingDuplicateCleanupConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Clean up duplicates", role: .destructive) {
+                let removed = weekViewModel.cleanupDuplicateImports()
+                cleanupMessage = removed == 0
+                    ? "No duplicates found."
+                    : "Removed \(removed) duplicate import(s)."
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Removes auto-imported Apple Health calendar workouts and restores unique runs to Unattached for manual attach. Does not change planned workouts.")
+        }
         .fileImporter(isPresented: $showingWeekImporter, allowedContentTypes: [.json]) { result in
             switch result {
             case .success(let url):
-                print("📂 File selected: \(url.lastPathComponent)")
                 weekViewModel.importWeek(from: url)
                 weekImportMessage = "Week imported successfully from \(url.lastPathComponent)"
             case .failure(let error):
-                print("❌ File import error: \(error.localizedDescription)")
                 weekImportMessage = "Import failed: \(error.localizedDescription)"
             }
         }
     }
+
+    private static let dateTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
 }
 
 #Preview {
     SettingsView(weekViewModel: WeekPlannerViewModel(templates: TemplateLibraryViewModel.makeSamples()))
 }
-
-
-

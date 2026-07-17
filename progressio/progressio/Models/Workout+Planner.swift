@@ -194,17 +194,25 @@ enum WorkoutEditing {
         actualDuration: String?,
         actualElevation: String?,
         status: WorkoutStatus,
-        timePeriod: TimePeriod? = nil
+        timePeriod: TimePeriod? = nil,
+        activityType: ActivityType? = nil,
+        notes: String? = nil
     ) {
         workout.title = title
         workout.runType = runType
         if let timePeriod {
             workout.timePeriod = timePeriod
         }
+        if let activityType, activityType.sessionKind == .run {
+            workout.activityType = activityType
+        }
         workout.plannedValues.plannedDistance = emptyToNil(plannedDistance)
         workout.plannedValues.plannedDuration = emptyToNil(plannedDuration)
         workout.plannedValues.plannedElevationGain = emptyToNil(plannedElevation)
         workout.status = status
+        if let notes {
+            workout.notes = emptyToNil(notes)
+        }
 
         if let actualDistance {
             let trimmed = actualDistance.trimmingCharacters(in: .whitespacesAndNewlines)

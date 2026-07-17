@@ -16,7 +16,7 @@ struct ContentView: View {
                 WeekPlannerView(viewModel: weekViewModel, templatesViewModel: templatesViewModel)
             }
             .tabItem {
-                Label("Week", systemImage: "calendar")
+                Label("Plan", systemImage: "calendar")
             }
 
             NavigationStack {
@@ -24,6 +24,13 @@ struct ContentView: View {
             }
             .tabItem {
                 Label("Templates", systemImage: "list.bullet.rectangle")
+            }
+
+            NavigationStack {
+                HistoryView(weekViewModel: weekViewModel)
+            }
+            .tabItem {
+                Label("History", systemImage: "clock")
             }
 
             NavigationStack {
@@ -39,6 +46,3 @@ struct ContentView: View {
 #Preview {
     ContentView()
 }
-
-
-

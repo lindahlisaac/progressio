@@ -7,6 +7,8 @@ struct MigratedWeekPlan: Codable, Equatable {
     var formatVersion: Int
     let startOfWeek: Date
     var days: [MigratedDayPlan]
+    var appliedPeriodizedWeekName: String?
+    var appliedPeriodizedBlockId: UUID?
     var schemaVersion: Int
     var createdAt: Date?
     var updatedAt: Date?
@@ -18,6 +20,8 @@ struct MigratedWeekPlan: Codable, Equatable {
         formatVersion: Int = MigratedWeekPlan.formatVersion,
         startOfWeek: Date,
         days: [MigratedDayPlan],
+        appliedPeriodizedWeekName: String? = nil,
+        appliedPeriodizedBlockId: UUID? = nil,
         schemaVersion: Int = WorkoutSchema.currentVersion,
         createdAt: Date? = nil,
         updatedAt: Date? = nil,
@@ -28,6 +32,8 @@ struct MigratedWeekPlan: Codable, Equatable {
         self.formatVersion = formatVersion
         self.startOfWeek = startOfWeek
         self.days = days
+        self.appliedPeriodizedWeekName = appliedPeriodizedWeekName
+        self.appliedPeriodizedBlockId = appliedPeriodizedBlockId
         self.schemaVersion = schemaVersion
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -41,6 +47,8 @@ struct MigratedWeekPlan: Codable, Equatable {
         formatVersion = try container.decodeIfPresent(Int.self, forKey: .formatVersion) ?? MigratedWeekPlan.formatVersion
         startOfWeek = try container.decode(Date.self, forKey: .startOfWeek)
         days = try container.decode([MigratedDayPlan].self, forKey: .days)
+        appliedPeriodizedWeekName = try container.decodeIfPresent(String.self, forKey: .appliedPeriodizedWeekName)
+        appliedPeriodizedBlockId = try container.decodeIfPresent(UUID.self, forKey: .appliedPeriodizedBlockId)
         schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? WorkoutSchema.currentVersion
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? updatedAt

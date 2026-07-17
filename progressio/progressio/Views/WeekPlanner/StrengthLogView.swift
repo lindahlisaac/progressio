@@ -1,8 +1,10 @@
 import SwiftUI
+import UIKit
 
 struct StrengthLogView: View {
     let workout: Workout
     var onNoteChange: ((String) -> Void)?
+    var onTitleChange: ((String) -> Void)?
     @State private var exercises: [ExerciseLog]
     private let initialExercises: [ExerciseLog]
     @State private var showingAddExerciseSheet = false
@@ -10,15 +12,18 @@ struct StrengthLogView: View {
     @FocusState private var isInputFocused: Bool
     @State private var isLocked: Bool
     @State private var isCompleted: Bool
+    @State private var title: String
     @State private var note: String
     @State private var timePeriod: TimePeriod
-    private let storageURL: URL
     @Environment(\.scenePhase) private var scenePhase
     private let onCompleteStatus: (() -> Void)?
     private let onUnlockStatus: (() -> Void)?
     private let onCompletedSnapshotPersist: ((StrengthRoutineSnapshot) -> Void)?
     private let onTimePeriodChange: ((TimePeriod) -> Void)?
     @State private var showingResetConfirm = false
+    @State private var persistWorkItem: DispatchWorkItem?
+    @State private var noteWorkItem: DispatchWorkItem?
+    @State private var titleWorkItem: DispatchWorkItem?
 
     private struct ExerciseSection: View {
         @Binding var exercise: ExerciseLog
@@ -65,6 +70,7 @@ struct StrengthLogView: View {
     init(
         workout: Workout,
         onNoteChange: ((String) -> Void)? = nil,
+        onTitleChange: ((String) -> Void)? = nil,
         onCompleteStatus: (() -> Void)? = nil,
         onUnlockStatus: (() -> Void)? = nil,
         onCompletedSnapshotPersist: ((StrengthRoutineSnapshot) -> Void)? = nil,
@@ -72,16 +78,18 @@ struct StrengthLogView: View {
     ) {
         self.workout = workout
         self.onNoteChange = onNoteChange
+        self.onTitleChange = onTitleChange
         self.onCompleteStatus = onCompleteStatus
         self.onUnlockStatus = onUnlockStatus
         self.onCompletedSnapshotPersist = onCompletedSnapshotPersist
         self.onTimePeriodChange = onTimePeriodChange
-        self.storageURL = StrengthLogPersistence.strengthLogURL(for: workout.id)
 
         let seededFromSnapshot = Self.seedExercises(from: workout)
         self.initialExercises = seededFromSnapshot
 
-        if let loaded = StrengthLogPersistence.load(from: storageURL) {
+        // Prefer workout-embedded snapshot (synced). One-time fallback to legacy local file if present.
+        if seededFromSnapshot.isEmpty,
+           let loaded = StrengthLogPersistence.load(from: StrengthLogPersistence.strengthLogURL(for: workout.id)) {
             _exercises = State(initialValue: loaded.exercises)
             let completed = workout.status == .completed || workout.status == .partiallyCompleted ? loaded.isCompleted : false
             _isCompleted = State(initialValue: completed)
@@ -94,6 +102,7 @@ struct StrengthLogView: View {
             _isLocked = State(initialValue: completed)
             _note = State(initialValue: workout.notes ?? "")
         }
+        _title = State(initialValue: workout.title.isEmpty ? ActivityType.strength.defaultTitle : workout.title)
         _timePeriod = State(initialValue: workout.timePeriod)
     }
 
@@ -109,7 +118,18 @@ struct StrengthLogView: View {
 
     var body: some View {
         List {
-            Section("Schedule") {
+            Section("Session") {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Title")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("Strength", text: $title)
+                        .focused($isInputFocused)
+                        .disabled(isLocked)
+                        .onChange(of: title) { newValue in
+                            scheduleTitlePersist(newValue)
+                        }
+                }
                 Picker("Time of day", selection: $timePeriod) {
                     ForEach(TimePeriod.allCases) { period in
                         Text(period.rawValue).tag(period)
@@ -120,11 +140,13 @@ struct StrengthLogView: View {
                     onTimePeriodChange?(newValue)
                 }
             }
-            Section("Description") {
+            Section("Notes") {
                 TextEditor(text: $note)
                     .frame(minHeight: 100)
+                    .focused($isInputFocused)
+                    .disabled(isLocked)
                     .onChange(of: note) { newValue in
-                        onNoteChange?(newValue)
+                        scheduleNotePersist(newValue)
                     }
             }
             ForEach($exercises) { $exercise in
@@ -139,7 +161,8 @@ struct StrengthLogView: View {
             }
             .onDelete(perform: deleteExercise)
         }
-        .navigationTitle(workout.title)
+        .navigationTitle(title.isEmpty ? "Strength" : title)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -159,19 +182,18 @@ struct StrengthLogView: View {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
                 Button("Done") {
-                    isInputFocused = false
+                    dismissKeyboard()
                 }
             }
         }
-        .onChange(of: exercises) { _ in
-            persistState()
-        }
-        .onChange(of: note) { newValue in
-            onNoteChange?(newValue)
+        .scrollDismissesKeyboard(.interactively)
+        .onChange(of: exercises) { newValue in
+            schedulePersist(exercises: newValue)
         }
         .onChange(of: scenePhase) { phase in
             if phase == .background || phase == .inactive {
                 persistState()
+                flushNoteAndTitle()
             }
         }
         .onAppear {
@@ -179,6 +201,7 @@ struct StrengthLogView: View {
         }
         .onDisappear {
             persistState()
+            flushNoteAndTitle()
         }
         .sheet(isPresented: $showingAddExerciseSheet) {
             NavigationStack {
@@ -267,45 +290,72 @@ struct StrengthLogView: View {
     private func markComplete() {
         isCompleted = true
         isLocked = true
-        isInputFocused = false
+        dismissKeyboard()
         onCompleteStatus?()
         persistState()
+    }
+
+    private func dismissKeyboard() {
+        isInputFocused = false
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil,
+            from: nil,
+            for: nil
+        )
     }
 
     private func resetLog() {
         exercises = initialExercises
         isCompleted = false
         isLocked = false
-        do {
-            if FileManager.default.fileExists(atPath: storageURL.path) {
-                try FileManager.default.removeItem(at: storageURL)
-            }
-        } catch {
-            print("Failed to remove log file at \(storageURL): \(error)")
-        }
         persistState()
     }
 
-    private func persistState() {
-        let state = StrengthLogState(sessionID: workout.id, exercises: exercises, isCompleted: isCompleted)
-        do {
-            try StrengthLogPersistence.save(state, to: storageURL)
-            print("Saved strength log to \(storageURL.lastPathComponent)")
-            if isCompleted {
-                onCompletedSnapshotPersist?(TemplateSnapshot.completedSnapshot(from: exercises))
-            }
-        } catch {
-            print("Failed to persist strength log at \(storageURL): \(error)")
+    private func schedulePersist(exercises pending: [ExerciseLog]) {
+        persistWorkItem?.cancel()
+        let persist = onCompletedSnapshotPersist
+        let work = DispatchWorkItem {
+            persist?(TemplateSnapshot.completedSnapshot(from: pending))
         }
+        persistWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: work)
+    }
+
+    private func scheduleNotePersist(_ value: String) {
+        noteWorkItem?.cancel()
+        let handler = onNoteChange
+        let work = DispatchWorkItem { handler?(value) }
+        noteWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: work)
+    }
+
+    private func scheduleTitlePersist(_ value: String) {
+        titleWorkItem?.cancel()
+        let handler = onTitleChange
+        let work = DispatchWorkItem { handler?(value) }
+        titleWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: work)
+    }
+
+    private func flushNoteAndTitle() {
+        noteWorkItem?.cancel()
+        noteWorkItem = nil
+        titleWorkItem?.cancel()
+        titleWorkItem = nil
+        onNoteChange?(note)
+        onTitleChange?(title)
+    }
+
+    private func persistState() {
+        persistWorkItem?.cancel()
+        persistWorkItem = nil
+        // Strength completion lives on the workout model (CloudKit week sync).
+        onCompletedSnapshotPersist?(TemplateSnapshot.completedSnapshot(from: exercises))
     }
 
     private func reloadStateIfAvailable() {
-        if let latest = StrengthLogPersistence.load(from: storageURL) {
-            exercises = latest.exercises
-            let completed = workout.status == .completed || workout.status == .partiallyCompleted ? latest.isCompleted : false
-            isCompleted = completed
-            isLocked = completed
-        }
+        // No separate file reload; week plan snapshot is source of truth after Task 021.
     }
 }
 

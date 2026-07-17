@@ -35,6 +35,21 @@ struct WeeklyTemplateWorkoutEntry: Identifiable, Codable, Equatable {
         self.templateName = templateName
     }
 
+    static func blank(activityType: ActivityType) -> WeeklyTemplateWorkoutEntry {
+        let notes: String = {
+            switch activityType {
+            case .strength: return "Strength session"
+            case .bike: return "Planned bike"
+            case .roadRun, .trailRun, .walk: return "Planned \(activityType.rawValue.lowercased())"
+            }
+        }()
+        return WeeklyTemplateWorkoutEntry(
+            activityType: activityType,
+            title: activityType.defaultTitle,
+            notes: notes
+        )
+    }
+
     /// Planned-only snapshot from a live workout (no completed values).
     static func snapshot(from workout: Workout) -> WeeklyTemplateWorkoutEntry {
         WeeklyTemplateWorkoutEntry(
@@ -65,7 +80,7 @@ struct WeeklyTemplateWorkoutEntry: Identifiable, Codable, Equatable {
         )
     }
 
-    func makeWorkout(plannedDate: Date, linkedWeeklyTemplateId: UUID?) -> Workout {
+    func makeWorkout(plannedDate: Date, linkedWeeklyTemplateId: UUID?, linkedPeriodizedBlockId: UUID? = nil) -> Workout {
         Workout(
             id: UUID(),
             plannedDate: plannedDate,
@@ -79,6 +94,7 @@ struct WeeklyTemplateWorkoutEntry: Identifiable, Codable, Equatable {
             source: .template,
             linkedWorkoutTemplateId: linkedWorkoutTemplateId,
             linkedWeeklyTemplateId: linkedWeeklyTemplateId,
+            linkedPeriodizedBlockId: linkedPeriodizedBlockId,
             templateName: templateName,
             notes: notes
         )

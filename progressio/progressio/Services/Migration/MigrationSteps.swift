@@ -70,3 +70,27 @@ struct MigrateWeeklyTemplateSnapshotsStep: MigrationStep {
     try WeeklyTemplateSnapshotMigration.migrateAll()
   }
 }
+
+// MARK: - Task 019
+
+struct MigrateHealthKitImportReferencesStep: MigrationStep {
+  let name = "Migrate HealthKit import references"
+  let resultingVersion = AppDataMigration.healthKitImportReferencesMigratedVersion
+
+  func migrate(from currentVersion: Int) throws {
+    guard currentVersion < resultingVersion else { return }
+    try HealthKitImportReferenceMigration.migrateAll()
+  }
+}
+
+// MARK: - Task 021
+
+struct MigrateStrengthLogEmbedStep: MigrationStep {
+  let name = "Embed strength logs into workouts"
+  let resultingVersion = AppDataMigration.strengthLogEmbedMigratedVersion
+
+  func migrate(from currentVersion: Int) throws {
+    guard currentVersion < resultingVersion else { return }
+    try StrengthLogEmbedMigration.migrateAll()
+  }
+}

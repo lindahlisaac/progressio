@@ -27,8 +27,24 @@ enum SyncMetadata {
         return copy
     }
 
+    static func softDelete(_ block: PeriodizedBlockTemplate, at date: Date = Date()) -> PeriodizedBlockTemplate {
+        var copy = block
+        copy.isDeleted = true
+        copy.deletedAt = date
+        copy.updatedAt = date
+        return copy
+    }
+
     static func softDelete(_ run: UnattachedRun, at date: Date = Date()) -> UnattachedRun {
         var copy = run
+        copy.isDeleted = true
+        copy.deletedAt = date
+        copy.updatedAt = date
+        return copy
+    }
+
+    static func softDelete(_ reference: ImportedHealthWorkoutReference, at date: Date = Date()) -> ImportedHealthWorkoutReference {
+        var copy = reference
         copy.isDeleted = true
         copy.deletedAt = date
         copy.updatedAt = date
@@ -73,6 +89,16 @@ enum SyncMetadata {
         }
     }
 
+    static func stampNewRecord(_ block: inout PeriodizedBlockTemplate, at date: Date = Date()) {
+        if block.createdAt == nil {
+            block.createdAt = date
+        }
+        block.updatedAt = date
+        if block.schemaVersion < WorkoutSchema.currentVersion {
+            block.schemaVersion = WorkoutSchema.currentVersion
+        }
+    }
+
     static func stampNewRecord(_ run: inout UnattachedRun, at date: Date = Date()) {
         if run.createdAt == nil {
             run.createdAt = date
@@ -80,6 +106,16 @@ enum SyncMetadata {
         run.updatedAt = date
         if run.schemaVersion < WorkoutSchema.currentVersion {
             run.schemaVersion = WorkoutSchema.currentVersion
+        }
+    }
+
+    static func stampNewRecord(_ reference: inout ImportedHealthWorkoutReference, at date: Date = Date()) {
+        if reference.createdAt == nil {
+            reference.createdAt = date
+        }
+        reference.updatedAt = date
+        if reference.schemaVersion < WorkoutSchema.currentVersion {
+            reference.schemaVersion = WorkoutSchema.currentVersion
         }
     }
 
@@ -95,8 +131,16 @@ enum SyncMetadata {
         template.updatedAt = date
     }
 
+    static func stampSave(_ block: inout PeriodizedBlockTemplate, at date: Date = Date()) {
+        block.updatedAt = date
+    }
+
     static func stampSave(_ run: inout UnattachedRun, at date: Date = Date()) {
         run.updatedAt = date
+    }
+
+    static func stampSave(_ reference: inout ImportedHealthWorkoutReference, at date: Date = Date()) {
+        reference.updatedAt = date
     }
 
     static func stampSave(_ week: inout WeekPlan, at date: Date = Date()) {

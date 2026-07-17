@@ -28,22 +28,18 @@ struct WeeklyTemplateDetailView: View {
                             .foregroundStyle(.secondary)
                     } else {
                         ForEach(day.workoutEntries) { entry in
-                            HStack {
-                                Image(systemName: entry.activityType.sessionKind.systemImage)
-                                    .foregroundStyle(.secondary)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(entry.title)
-                                        .font(.subheadline)
-                                    if let runType = entry.runType {
-                                        Text(runType.rawValue)
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                    } else if entry.activityType != .strength {
-                                        Text(entry.activityType.rawValue)
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                    }
+                            if entry.activityType == .strength,
+                               let snapshot = entry.plannedValues.plannedStrengthRoutineSnapshot {
+                                NavigationLink {
+                                    StrengthRoutineSnapshotDetailView(
+                                        title: entry.title,
+                                        snapshot: snapshot
+                                    )
+                                } label: {
+                                    weeklyTemplateEntryRow(entry)
                                 }
+                            } else {
+                                weeklyTemplateEntryRow(entry)
                             }
                         }
                     }
@@ -141,32 +137,12 @@ struct WeeklyTemplateDetailView: View {
             }
 
             Menu {
-                Button("Blank run") {
-                    editDraftDays[idx].workoutEntries.append(
-                        WeeklyTemplateWorkoutEntry(
-                            activityType: .roadRun,
-                            title: "Run",
-                            notes: "Planned run"
+                ForEach(ActivityType.plannerAddTypes) { activityType in
+                    Button("Blank \(activityType.rawValue)") {
+                        editDraftDays[idx].workoutEntries.append(
+                            WeeklyTemplateWorkoutEntry.blank(activityType: activityType)
                         )
-                    )
-                }
-                Button("Blank bike") {
-                    editDraftDays[idx].workoutEntries.append(
-                        WeeklyTemplateWorkoutEntry(
-                            activityType: .bike,
-                            title: "Bike",
-                            notes: "Planned bike"
-                        )
-                    )
-                }
-                Button("Blank strength") {
-                    editDraftDays[idx].workoutEntries.append(
-                        WeeklyTemplateWorkoutEntry(
-                            activityType: .strength,
-                            title: "Strength",
-                            notes: "Strength session"
-                        )
-                    )
+                    }
                 }
                 Divider()
                 Button("From template...") {
@@ -318,10 +294,84 @@ struct WeeklyTemplateDetailView: View {
         showingEdit = false
     }
     
+    @ViewBuilder
+    private func weeklyTemplateEntryRow(_ entry: WeeklyTemplateWorkoutEntry) -> some View {
+        HStack {
+            Image(systemName: entry.activityType.sessionKind.systemImage)
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.title)
+                    .font(.subheadline)
+                if let runType = entry.runType {
+                    Text(runType.rawValue)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else if entry.activityType != .strength {
+                    Text(entry.activityType.rawValue)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else if entry.plannedValues.plannedStrengthRoutineSnapshot != nil {
+                    Text("Tap for routine")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
     private func weekdayName(_ weekday: Int) -> String {
         let fmt = DateFormatter()
         fmt.locale = .current
         return fmt.weekdaySymbols[(weekday - 1 + 7) % 7]
+    }
+}
+
+struct StrengthRoutineSnapshotDetailView: View {
+    let title: String
+    let snapshot: StrengthRoutineSnapshot
+
+    var body: some View {
+        List {
+            if let notes = snapshot.completionNotes, !notes.isEmpty {
+                Section("Notes") {
+                    Text(notes)
+                }
+            }
+            ForEach(snapshot.exercises.sorted(by: { $0.orderIndex < $1.orderIndex })) { exercise in
+                Section(exercise.name) {
+                    if let muscle = exercise.muscleGroup, !muscle.isEmpty {
+                        Text(muscle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(exercise.targetSets) { set in
+                        HStack {
+                            Text("Set \(set.setNumber)")
+                            Spacer()
+                            if let reps = set.targetReps {
+                                Text("\(reps) reps")
+                                    .foregroundStyle(.secondary)
+                            } else if let hint = set.repHint, !hint.isEmpty {
+                                Text(hint)
+                                    .foregroundStyle(.secondary)
+                            }
+                            if let weight = set.targetWeight {
+                                Text(String(format: "%.1f", weight))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .font(.subheadline)
+                    }
+                    if let notes = exercise.notes, !notes.isEmpty {
+                        Text(notes)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

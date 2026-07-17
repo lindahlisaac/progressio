@@ -48,8 +48,8 @@ private struct UnattachedRunRow: View {
                         .font(.caption2.weight(.semibold))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.blue.opacity(0.12))
-                        .foregroundStyle(Color.blue)
+                        .background(cat.tint.opacity(0.12))
+                        .foregroundStyle(cat.tint)
                         .clipShape(Capsule())
                 }
             }

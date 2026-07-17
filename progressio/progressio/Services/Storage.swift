@@ -47,6 +47,16 @@ protocol WeeklyTemplateStore {
     func save(_ templates: [WeeklyTemplate])
 }
 
+protocol ImportedHealthWorkoutReferenceStore {
+    func loadReferences() -> [ImportedHealthWorkoutReference]
+    func save(_ references: [ImportedHealthWorkoutReference])
+}
+
+protocol PeriodizedBlockStore {
+    func loadBlocks() -> [PeriodizedBlockTemplate]
+    func save(_ blocks: [PeriodizedBlockTemplate])
+}
+
 // MARK: - File-backed stores
 
 struct FileTemplateStore: TemplateStore {
@@ -186,5 +196,90 @@ struct FileWeeklyTemplateStore: WeeklyTemplateStore {
         } catch {
             print("❌ Failed to persist weekly templates: \(error)")
         }
+    }
+}
+
+struct FileImportedHealthWorkoutReferenceStore: ImportedHealthWorkoutReferenceStore {
+    private let url = StoragePaths.file("importedHealthWorkouts.json")
+
+    func loadReferences() -> [ImportedHealthWorkoutReference] {
+        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
+        do {
+            let data = try Data(contentsOf: url)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            return try decoder.decode([ImportedHealthWorkoutReference].self, from: data)
+        } catch {
+            print("Failed to load imported HealthKit references: \(error)")
+            return []
+        }
+    }
+
+    func save(_ references: [ImportedHealthWorkoutReference]) {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        do {
+            let data = try encoder.encode(references)
+            try data.write(to: url, options: .atomic)
+        } catch {
+            print("Failed to persist imported HealthKit references: \(error)")
+        }
+    }
+}
+
+struct FilePeriodizedBlockStore: PeriodizedBlockStore {
+    private let url = StoragePaths.file("periodizedBlocks.json")
+
+    func loadBlocks() -> [PeriodizedBlockTemplate] {
+        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
+        do {
+            let data = try Data(contentsOf: url)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            return try decoder.decode([PeriodizedBlockTemplate].self, from: data)
+        } catch {
+            print("Failed to load periodized blocks: \(error)")
+            return []
+        }
+    }
+
+    func save(_ blocks: [PeriodizedBlockTemplate]) {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted]
+        do {
+            let data = try encoder.encode(blocks)
+            try data.write(to: url, options: .atomic)
+        } catch {
+            print("Failed to persist periodized blocks: \(error)")
+        }
+    }
+}
+
+enum WeekPlanFileIndex {
+    private static let prefix = "weekplan-"
+    private static let suffix = ".json"
+
+    private static let dateFormatter: ISO8601DateFormatter = {
+        let fmt = ISO8601DateFormatter()
+        fmt.formatOptions = [.withFullDate]
+        return fmt
+    }()
+
+    /// Week start dates for all on-disk week plan files (local Documents).
+    static func allWeekStarts(fileManager: FileManager = .default) -> [Date] {
+        let dir = StoragePaths.baseDirectory
+        guard let contents = try? fileManager.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: nil
+        ) else { return [] }
+
+        return contents.compactMap { url -> Date? in
+            let name = url.lastPathComponent
+            guard name.hasPrefix(prefix), name.hasSuffix(suffix) else { return nil }
+            let dateString = String(name.dropFirst(prefix.count).dropLast(suffix.count))
+            return dateFormatter.date(from: dateString)
+        }
+        .sorted(by: >)
     }
 }

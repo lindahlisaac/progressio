@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 enum ActivityType: String, Codable, CaseIterable, Identifiable {
     case roadRun = "Road Run"
@@ -44,6 +45,14 @@ enum TimePeriod: String, Codable, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    /// AM before PM in day lists.
+    var sortIndex: Int {
+        switch self {
+        case .am: return 0
+        case .pm: return 1
+        }
+    }
+
     /// Default AM/PM cutoff per docs: AM = midnight–11:59am, PM = noon–11:59pm.
     static func from(date: Date, calendar: Calendar = .current) -> TimePeriod {
         let hour = calendar.component(.hour, from: date)
@@ -61,6 +70,9 @@ enum RunType: String, Codable, CaseIterable, Identifiable {
     case race = "Race"
 
     var id: String { rawValue }
+
+    /// Planner intensity chip color.
+    var tint: Color { runCategory?.tint ?? .blue }
 }
 
 // MARK: - Legacy enum bridges (mapper support only)
@@ -139,6 +151,24 @@ extension RunCategory {
         case .vo2: self = .vo2
         case .longRun: self = .longRun
         case .race: self = .race
+        }
+    }
+
+    /// Planner intensity chip color.
+    var tint: Color {
+        switch self {
+        case .easy, .recovery:
+            return .green
+        case .tempo:
+            return .yellow
+        case .threshold:
+            return .orange
+        case .vo2:
+            return .red
+        case .race:
+            return .purple
+        case .longRun:
+            return .cyan
         }
     }
 }

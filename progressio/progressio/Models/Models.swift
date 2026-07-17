@@ -207,7 +207,16 @@ struct DayPlan: Identifiable, Codable {
     }
 
     var activeWorkouts: [Workout] {
-        workouts.filter { !$0.metadata.isDeleted }
+        workouts
+            .enumerated()
+            .filter { !$0.element.metadata.isDeleted }
+            .sorted { lhs, rhs in
+                if lhs.element.timePeriod != rhs.element.timePeriod {
+                    return lhs.element.timePeriod.sortIndex < rhs.element.timePeriod.sortIndex
+                }
+                return lhs.offset < rhs.offset
+            }
+            .map(\.element)
     }
 
     init(from decoder: Decoder) throws {
@@ -242,6 +251,9 @@ struct DayPlan: Identifiable, Codable {
 struct WeekPlan: Codable {
     let startOfWeek: Date
     var days: [DayPlan]
+    /// Display name when this week was applied from a periodized block (e.g. "Peak").
+    var appliedPeriodizedWeekName: String?
+    var appliedPeriodizedBlockId: UUID?
     var schemaVersion: Int
     var createdAt: Date?
     var updatedAt: Date?
@@ -252,6 +264,8 @@ struct WeekPlan: Codable {
     init(
         startOfWeek: Date,
         days: [DayPlan],
+        appliedPeriodizedWeekName: String? = nil,
+        appliedPeriodizedBlockId: UUID? = nil,
         schemaVersion: Int = WorkoutSchema.currentVersion,
         createdAt: Date? = Date(),
         updatedAt: Date? = Date(),
@@ -261,6 +275,8 @@ struct WeekPlan: Codable {
     ) {
         self.startOfWeek = startOfWeek
         self.days = days
+        self.appliedPeriodizedWeekName = appliedPeriodizedWeekName
+        self.appliedPeriodizedBlockId = appliedPeriodizedBlockId
         self.schemaVersion = schemaVersion
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -273,6 +289,8 @@ struct WeekPlan: Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         startOfWeek = try container.decode(Date.self, forKey: .startOfWeek)
         days = try container.decode([DayPlan].self, forKey: .days)
+        appliedPeriodizedWeekName = try container.decodeIfPresent(String.self, forKey: .appliedPeriodizedWeekName)
+        appliedPeriodizedBlockId = try container.decodeIfPresent(UUID.self, forKey: .appliedPeriodizedBlockId)
         schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? WorkoutSchema.currentVersion
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? updatedAt

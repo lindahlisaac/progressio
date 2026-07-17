@@ -18,6 +18,8 @@ enum WeekPlanMapper {
         return MigratedWeekPlan(
             startOfWeek: weekPlan.startOfWeek,
             days: days,
+            appliedPeriodizedWeekName: weekPlan.appliedPeriodizedWeekName,
+            appliedPeriodizedBlockId: weekPlan.appliedPeriodizedBlockId,
             schemaVersion: weekPlan.schemaVersion,
             createdAt: weekPlan.createdAt,
             updatedAt: weekPlan.updatedAt,
@@ -41,6 +43,8 @@ enum WeekPlanMapper {
         return WeekPlan(
             startOfWeek: migrated.startOfWeek,
             days: days,
+            appliedPeriodizedWeekName: migrated.appliedPeriodizedWeekName,
+            appliedPeriodizedBlockId: migrated.appliedPeriodizedBlockId,
             schemaVersion: migrated.schemaVersion,
             createdAt: migrated.createdAt,
             updatedAt: migrated.updatedAt,
