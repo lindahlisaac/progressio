@@ -99,32 +99,38 @@ final class TemplateLibraryViewModel: ObservableObject {
     }
 
     func updateTemplate(_ updated: StrengthTemplate) {
-        if let idx = templates.firstIndex(where: { $0.id == updated.id }) {
-            var stamped = updated
-            SyncMetadata.stampSave(&stamped)
-            templates[idx] = stamped
-            persistTemplates()
-        }
+        guard let idx = templates.firstIndex(where: { $0.id == updated.id }) else { return }
+        var next = templates
+        var stamped = updated
+        SyncMetadata.stampSave(&stamped)
+        next[idx] = stamped
+        templates = next
+        persistTemplates()
     }
 
     func updateEnduranceTemplate(_ updated: EnduranceTemplate) {
-        if let idx = enduranceTemplates.firstIndex(where: { $0.id == updated.id }) {
-            var stamped = updated
-            SyncMetadata.stampSave(&stamped)
-            enduranceTemplates[idx] = stamped
-            persistEnduranceTemplates()
-        }
+        guard let idx = enduranceTemplates.firstIndex(where: { $0.id == updated.id }) else { return }
+        var next = enduranceTemplates
+        var stamped = updated
+        SyncMetadata.stampSave(&stamped)
+        next[idx] = stamped
+        enduranceTemplates = next
+        persistEnduranceTemplates()
     }
 
     func deleteTemplate(id: UUID) {
         guard let idx = templates.firstIndex(where: { $0.id == id }) else { return }
-        templates[idx] = SyncMetadata.softDelete(templates[idx])
+        var next = templates
+        next[idx] = SyncMetadata.softDelete(next[idx])
+        templates = next
         persistTemplates()
     }
 
     func deleteEnduranceTemplate(id: UUID) {
         guard let idx = enduranceTemplates.firstIndex(where: { $0.id == id }) else { return }
-        enduranceTemplates[idx] = SyncMetadata.softDelete(enduranceTemplates[idx])
+        var next = enduranceTemplates
+        next[idx] = SyncMetadata.softDelete(next[idx])
+        enduranceTemplates = next
         persistEnduranceTemplates()
     }
 

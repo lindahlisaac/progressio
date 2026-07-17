@@ -24,24 +24,24 @@ extension WeekPlannerViewModel {
 
     func updatePeriodizedBlock(_ block: PeriodizedBlockTemplate) {
         guard let index = periodizedBlocks.firstIndex(where: { $0.id == block.id }) else { return }
+        var next = periodizedBlocks
         var updated = block
         SyncMetadata.stampSave(&updated)
-        periodizedBlocks[index] = updated
+        next[index] = updated
+        periodizedBlocks = next
         persistPeriodizedBlocks()
     }
 
     func deletePeriodizedBlock(id: UUID) {
         guard let index = periodizedBlocks.firstIndex(where: { $0.id == id }) else { return }
-        periodizedBlocks[index] = SyncMetadata.softDelete(periodizedBlocks[index])
+        var next = periodizedBlocks
+        next[index] = SyncMetadata.softDelete(next[index])
+        periodizedBlocks = next
         persistPeriodizedBlocks()
     }
 
     func persistPeriodizedBlocks() {
-        periodizedBlocks = periodizedBlocks.map { block in
-            var stamped = block
-            SyncMetadata.stampSave(&stamped)
-            return stamped
-        }
+        // Persist as-is; callers stamp the records they mutate.
         periodizedBlockStore.save(periodizedBlocks)
     }
 

@@ -3,14 +3,16 @@ import SwiftUI
 /// Searchable catalog picker for canonical lift names.
 struct LiftPickerView: View {
     var title: String = "Choose Lift"
+    /// When false, content is pushed inside an existing `NavigationStack` (e.g. edit-template sheet).
+    var embedsNavigationStack: Bool = true
     var onSelect: (CatalogLift) -> Void
     var onSelectCustom: ((String) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var query: String = ""
     @State private var selectedGroup: LiftMuscleGroup?
-    @State private var showingCustom = false
     @State private var customName: String = ""
+    @State private var showingCustomForm = false
 
     private var filtered: [CatalogLift] {
         let base: [CatalogLift]
@@ -28,101 +30,98 @@ struct LiftPickerView: View {
     }
 
     private var grouped: [(LiftMuscleGroup, [CatalogLift])] {
-        let groups = LiftMuscleGroup.allCases
-        return groups.compactMap { group in
+        LiftMuscleGroup.allCases.compactMap { group in
             let lifts = filtered.filter { $0.muscleGroup == group }
             return lifts.isEmpty ? nil : (group, lifts)
         }
     }
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            groupChip(title: "All", selected: selectedGroup == nil) {
-                                selectedGroup = nil
-                            }
-                            ForEach(LiftMuscleGroup.allCases) { group in
-                                groupChip(title: group.rawValue, selected: selectedGroup == group) {
-                                    selectedGroup = group
-                                }
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+        Group {
+            if embedsNavigationStack {
+                NavigationStack {
+                    pickerBody
                 }
+            } else {
+                pickerBody
+            }
+        }
+    }
 
-                if filtered.isEmpty {
-                    ContentUnavailableView(
-                        "No matching lifts",
-                        systemImage: "magnifyingglass",
-                        description: Text("Try another search, or add a custom lift name.")
-                    )
-                } else if selectedGroup == nil, query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    ForEach(grouped, id: \.0) { group, lifts in
-                        Section(group.rawValue) {
-                            ForEach(lifts) { lift in
-                                liftRow(lift)
+    private var pickerBody: some View {
+        List {
+            Section {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        groupChip(title: "All", selected: selectedGroup == nil) {
+                            selectedGroup = nil
+                        }
+                        ForEach(LiftMuscleGroup.allCases) { group in
+                            groupChip(title: group.rawValue, selected: selectedGroup == group) {
+                                selectedGroup = group
                             }
                         }
                     }
-                } else {
-                    Section {
-                        ForEach(filtered) { lift in
+                    .padding(.vertical, 4)
+                }
+                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            }
+
+            if filtered.isEmpty {
+                ContentUnavailableView(
+                    "No matching lifts",
+                    systemImage: "magnifyingglass",
+                    description: Text("Try another search, or add a custom lift name.")
+                )
+            } else if selectedGroup == nil, query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                ForEach(grouped, id: \.0) { group, lifts in
+                    Section(group.rawValue) {
+                        ForEach(lifts) { lift in
                             liftRow(lift)
                         }
                     }
                 }
+            } else {
+                Section {
+                    ForEach(filtered) { lift in
+                        liftRow(lift)
+                    }
+                }
+            }
 
-                if onSelectCustom != nil {
-                    Section {
+            if onSelectCustom != nil {
+                Section {
+                    if showingCustomForm {
+                        TextField("Custom lift name", text: $customName)
+                            .textInputAutocapitalization(.words)
+                        Button("Use custom name") {
+                            let trimmed = customName.trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard !trimmed.isEmpty else { return }
+                            onSelectCustom?(LiftCatalog.canonicalName(for: trimmed))
+                            dismiss()
+                        }
+                        .disabled(customName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    } else {
                         Button {
                             customName = query
-                            showingCustom = true
+                            showingCustomForm = true
                         } label: {
                             Label("Custom lift…", systemImage: "plus.circle")
                         }
-                    } footer: {
-                        Text("Prefer catalog names when possible so history can match prior sessions.")
                     }
+                } footer: {
+                    Text("Prefer catalog names when possible so history can match prior sessions.")
                 }
             }
-            .searchable(text: $query, prompt: "Search lifts")
-            .navigationTitle(title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
+        }
+        .searchable(text: $query, prompt: "Search lifts")
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if embedsNavigationStack {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
-            }
-            .sheet(isPresented: $showingCustom) {
-                NavigationStack {
-                    Form {
-                        TextField("Lift name", text: $customName)
-                            .textInputAutocapitalization(.words)
-                    }
-                    .navigationTitle("Custom Lift")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Cancel") { showingCustom = false }
-                        }
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Add") {
-                                let trimmed = customName.trimmingCharacters(in: .whitespacesAndNewlines)
-                                guard !trimmed.isEmpty else { return }
-                                onSelectCustom?(LiftCatalog.canonicalName(for: trimmed))
-                                showingCustom = false
-                                dismiss()
-                            }
-                            .disabled(customName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        }
-                    }
-                }
-                .presentationDetents([.medium])
             }
         }
     }

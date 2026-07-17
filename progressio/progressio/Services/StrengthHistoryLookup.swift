@@ -71,16 +71,25 @@ enum StrengthHistoryLookup {
         localStore: WeekPlanStore = FileWeekPlanStore()
     ) -> StrengthComparisonResult {
         let excludeID = current.id
-        let neededKeys = Set(currentLiftNames.map(normalizeLiftName).filter { !$0.isEmpty })
+        let orderedKeys = currentLiftNames
+            .map(normalizeLiftName)
+            .filter { !$0.isEmpty }
+        let neededKeys = Set(orderedKeys)
         let currentTitleKey = normalizeSessionTitle(current.title)
         let currentTemplate = current.templateName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let currentTemplateID = current.linkedWorkoutTemplateId
 
         var priorByLift: [String: PriorLiftPerformance] = [:]
         var similarSession: PriorStrengthSession?
         var bestScore = 0
+        var bestWasTemplateMatch = false
 
-        let weekStarts = WeekPlanFileIndex.allWeekStarts().prefix(lookbackWeeks)
-        for weekStart in weekStarts {
+        // Always include the in-memory current week — it may not be on disk yet.
+        var weekStarts = WeekPlanFileIndex.allWeekStarts()
+        if !weekStarts.contains(where: { calendar.isDate($0, inSameDayAs: currentWeekPlan.startOfWeek) }) {
+            weekStarts.insert(currentWeekPlan.startOfWeek, at: 0)
+        }
+        for weekStart in weekStarts.prefix(lookbackWeeks) {
             let plan: WeekPlan
             if calendar.isDate(weekStart, inSameDayAs: currentWeekPlan.startOfWeek) {
                 plan = currentWeekPlan
@@ -94,7 +103,6 @@ enum StrengthHistoryLookup {
                 for workout in day.activeWorkouts.reversed() {
                     guard workout.id != excludeID,
                           workout.activityType == .strength,
-                          isCompletedStrength(workout),
                           let snapshot = workout.completedValues.completedStrengthRoutineSnapshot
                     else { continue }
 
@@ -105,6 +113,7 @@ enum StrengthHistoryLookup {
                         date: sessionDate,
                         workoutID: workout.id
                     )
+                    // Need at least one logged set — status may still be planned while logging.
                     guard !lifts.isEmpty else { continue }
 
                     for lift in lifts {
@@ -118,10 +127,17 @@ enum StrengthHistoryLookup {
                         lifts: lifts,
                         currentTitleKey: currentTitleKey,
                         currentTemplate: currentTemplate,
+                        currentTemplateID: currentTemplateID,
                         neededKeys: neededKeys
+                    )
+                    let templateMatch = isTemplateMatch(
+                        workout: workout,
+                        currentTemplate: currentTemplate,
+                        currentTemplateID: currentTemplateID
                     )
                     if score > bestScore {
                         bestScore = score
+                        bestWasTemplateMatch = templateMatch
                         similarSession = PriorStrengthSession(
                             id: workout.id,
                             title: workout.title,
@@ -129,11 +145,19 @@ enum StrengthHistoryLookup {
                             matchLabel: matchLabel(
                                 workout: workout,
                                 currentTemplate: currentTemplate,
+                                currentTemplateID: currentTemplateID,
                                 currentTitleKey: currentTitleKey,
                                 score: score
                             ),
                             lifts: lifts
                         )
+                        if templateMatch {
+                            fillPriorByLiftOrder(
+                                priorByLift: &priorByLift,
+                                orderedKeys: orderedKeys,
+                                from: lifts
+                            )
+                        }
                     }
 
                     if bestScore > 0, neededKeys.isSubset(of: Set(priorByLift.keys)) {
@@ -145,16 +169,83 @@ enum StrengthHistoryLookup {
 
         if bestScore <= 0 {
             similarSession = nil
+        } else if bestWasTemplateMatch, let similar = similarSession {
+            // Ensure order fallback runs even when the best match was found after name fills stalled.
+            fillPriorByLiftOrder(
+                priorByLift: &priorByLift,
+                orderedKeys: orderedKeys,
+                from: similar.lifts
+            )
         }
         return StrengthComparisonResult(similarSession: similarSession, priorByLift: priorByLift)
     }
 
-    private static func isCompletedStrength(_ workout: Workout) -> Bool {
-        switch workout.status {
-        case .completed, .partiallyCompleted:
+    /// Prefer template-linked / same-name sessions; also accept any logged strength with lift overlap.
+    private static func sessionScore(
+        workout: Workout,
+        lifts: [PriorLiftPerformance],
+        currentTitleKey: String,
+        currentTemplate: String?,
+        currentTemplateID: UUID?,
+        neededKeys: Set<String>
+    ) -> Int {
+        var score = 0
+        if let currentTemplateID,
+           let priorID = workout.linkedWorkoutTemplateId,
+           currentTemplateID == priorID {
+            score += 150
+        }
+        if let currentTemplate,
+           let priorTemplate = workout.templateName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !currentTemplate.isEmpty,
+           currentTemplate.caseInsensitiveCompare(priorTemplate) == .orderedSame {
+            score += 100
+        }
+        if !currentTitleKey.isEmpty,
+           normalizeSessionTitle(workout.title) == currentTitleKey {
+            score += 50
+        }
+        let overlap = Set(lifts.map(\.normalizedName)).intersection(neededKeys).count
+        score += overlap * 10
+        return score
+    }
+
+    private static func isTemplateMatch(
+        workout: Workout,
+        currentTemplate: String?,
+        currentTemplateID: UUID?
+    ) -> Bool {
+        if let currentTemplateID,
+           let priorID = workout.linkedWorkoutTemplateId,
+           currentTemplateID == priorID {
             return true
-        case .planned, .skipped, .imported:
-            return false
+        }
+        if let currentTemplate,
+           let priorTemplate = workout.templateName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !currentTemplate.isEmpty,
+           currentTemplate.caseInsensitiveCompare(priorTemplate) == .orderedSame {
+            return true
+        }
+        return false
+    }
+
+    /// When the same template was remapped to catalog names, align missing lifts by routine order.
+    private static func fillPriorByLiftOrder(
+        priorByLift: inout [String: PriorLiftPerformance],
+        orderedKeys: [String],
+        from lifts: [PriorLiftPerformance]
+    ) {
+        for (index, key) in orderedKeys.enumerated() {
+            guard priorByLift[key] == nil, index < lifts.count else { continue }
+            let prior = lifts[index]
+            priorByLift[key] = PriorLiftPerformance(
+                name: prior.name,
+                normalizedName: key,
+                date: prior.date,
+                sessionTitle: prior.sessionTitle,
+                workoutID: prior.workoutID,
+                sets: prior.sets
+            )
         }
     }
 
@@ -187,35 +278,18 @@ enum StrengthHistoryLookup {
         }
     }
 
-    private static func sessionScore(
-        workout: Workout,
-        lifts: [PriorLiftPerformance],
-        currentTitleKey: String,
-        currentTemplate: String?,
-        neededKeys: Set<String>
-    ) -> Int {
-        var score = 0
-        if let currentTemplate,
-           let priorTemplate = workout.templateName?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !currentTemplate.isEmpty,
-           currentTemplate.caseInsensitiveCompare(priorTemplate) == .orderedSame {
-            score += 100
-        }
-        if !currentTitleKey.isEmpty,
-           normalizeSessionTitle(workout.title) == currentTitleKey {
-            score += 50
-        }
-        let overlap = Set(lifts.map(\.normalizedName)).intersection(neededKeys).count
-        score += overlap * 10
-        return score
-    }
-
     private static func matchLabel(
         workout: Workout,
         currentTemplate: String?,
+        currentTemplateID: UUID?,
         currentTitleKey: String,
         score: Int
     ) -> String {
+        if let currentTemplateID,
+           let priorID = workout.linkedWorkoutTemplateId,
+           currentTemplateID == priorID {
+            return "Same template"
+        }
         if let currentTemplate,
            let priorTemplate = workout.templateName?.trimmingCharacters(in: .whitespacesAndNewlines),
            !currentTemplate.isEmpty,

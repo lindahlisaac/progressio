@@ -41,13 +41,14 @@ struct PeriodizedBlocksSection: View {
                         }
                         .tint(.blue)
                     }
-                    .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) {
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button {
                             blockPendingDelete = block
                             showingDeleteAlert = true
                         } label: {
                             Label("Delete", systemImage: "trash")
                         }
+                        .tint(.red)
                     }
                 }
             }

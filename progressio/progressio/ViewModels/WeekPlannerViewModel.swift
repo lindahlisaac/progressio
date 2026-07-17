@@ -196,16 +196,20 @@ final class WeekPlannerViewModel: ObservableObject {
 
     func deleteWeeklyTemplate(id: UUID) {
         guard let idx = weeklyTemplates.firstIndex(where: { $0.id == id }) else { return }
-        weeklyTemplates[idx] = SyncMetadata.softDelete(weeklyTemplates[idx])
+        var next = weeklyTemplates
+        next[idx] = SyncMetadata.softDelete(next[idx])
+        weeklyTemplates = next
         persistWeeklyTemplates()
     }
 
     func updateWeeklyTemplate(id: UUID, name: String, note: String?, days: [DayTemplate]) {
         guard let idx = weeklyTemplates.firstIndex(where: { $0.id == id }) else { return }
-        weeklyTemplates[idx].name = name
-        weeklyTemplates[idx].note = note
-        weeklyTemplates[idx].days = days
-        SyncMetadata.stampSave(&weeklyTemplates[idx])
+        var next = weeklyTemplates
+        next[idx].name = name
+        next[idx].note = note
+        next[idx].days = days
+        SyncMetadata.stampSave(&next[idx])
+        weeklyTemplates = next
         persistWeeklyTemplates()
     }
 

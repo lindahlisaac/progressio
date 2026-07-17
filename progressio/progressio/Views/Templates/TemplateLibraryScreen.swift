@@ -13,6 +13,7 @@ struct TemplateLibraryView: View {
     @State private var newExerciseSetsCount: String = ""
     @State private var newExerciseMinReps: Int = 6
     @State private var newExerciseMaxReps: Int = 10
+    @State private var newLiftPickerMode: TemplateLiftPickerMode?
     @State private var newRunCategory: RunCategory = .easy
     @State private var newActivityType: ActivityType = .roadRun
     @State private var newPlannedDistance: String = ""
@@ -97,30 +98,34 @@ struct TemplateLibraryView: View {
                 Text("No strength templates yet.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-            }
-            ForEach(viewModel.activeTemplates) { template in
-                NavigationLink {
-                    TemplateDetailView(template: template, viewModel: viewModel)
-                } label: {
-                    VStack(alignment: .leading) {
-                        Text(template.name)
-                            .font(.headline)
-                        if let note = template.note {
-                            Text(note)
-                                .font(.caption)
+            } else {
+                ForEach(viewModel.activeTemplates, id: \.id) { template in
+                    NavigationLink {
+                        TemplateDetailView(template: template, viewModel: viewModel)
+                    } label: {
+                        VStack(alignment: .leading) {
+                            Text(template.name)
+                                .font(.headline)
+                            if let note = template.note {
+                                Text(note)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Text("\(template.exercises.count) exercises")
+                                .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
-                        Text("\(template.exercises.count) exercises")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
                     }
-                }
-                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                    Button(role: .destructive) {
-                        templatePendingDelete = template
-                        showingDeleteAlert = true
-                    } label: {
-                        Label("Delete", systemImage: "trash")
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        // Do not use role: .destructive here — that animates a row removal
+                        // before the confirmation alert soft-deletes, crashing the List.
+                        Button {
+                            templatePendingDelete = template
+                            showingDeleteAlert = true
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                        .tint(.red)
                     }
                 }
             }
@@ -134,35 +139,37 @@ struct TemplateLibraryView: View {
                 Text("No endurance templates yet.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-            }
-            ForEach(viewModel.activeEnduranceTemplates) { template in
-                NavigationLink {
-                    EnduranceTemplateDetailView(template: template, viewModel: viewModel)
-                } label: {
-                    VStack(alignment: .leading) {
-                        Text(template.name)
-                            .font(.headline)
-                        if let description = template.description {
-                            Text(description)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        HStack(spacing: 6) {
-                            Text(template.activityType.rawValue)
-                            if let runType = template.runType {
-                                Text("• \(runType.rawValue)")
-                            }
-                        }
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    }
-                }
-                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                    Button(role: .destructive) {
-                        endurancePendingDelete = template
-                        showingEnduranceDeleteAlert = true
+            } else {
+                ForEach(viewModel.activeEnduranceTemplates, id: \.id) { template in
+                    NavigationLink {
+                        EnduranceTemplateDetailView(template: template, viewModel: viewModel)
                     } label: {
-                        Label("Delete", systemImage: "trash")
+                        VStack(alignment: .leading) {
+                            Text(template.name)
+                                .font(.headline)
+                            if let description = template.description {
+                                Text(description)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            HStack(spacing: 6) {
+                                Text(template.activityType.rawValue)
+                                if let runType = template.runType {
+                                    Text("• \(runType.rawValue)")
+                                }
+                            }
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        }
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button {
+                            endurancePendingDelete = template
+                            showingEnduranceDeleteAlert = true
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                        .tint(.red)
                     }
                 }
             }
@@ -385,16 +392,36 @@ struct TemplateLibraryView: View {
                         exerciseName: $newExerciseName,
                         exerciseSetsCount: $newExerciseSetsCount,
                         exerciseMinReps: $newExerciseMinReps,
-                        exerciseMaxReps: $newExerciseMaxReps
+                        exerciseMaxReps: $newExerciseMaxReps,
+                        liftPickerMode: $newLiftPickerMode
                     )
                 }
             }
             .navigationTitle("New Template")
+            .navigationDestination(isPresented: Binding(
+                get: { newLiftPickerMode != nil },
+                set: { if !$0 { newLiftPickerMode = nil } }
+            )) {
+                templateLiftPicker(
+                    mode: newLiftPickerMode,
+                    onPick: { name in
+                        applyTemplateLiftPick(
+                            name,
+                            mode: newLiftPickerMode,
+                            exercises: $newExercises,
+                            draftName: $newExerciseName
+                        )
+                    }
+                )
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismissSheet() }
                 }
-                ToolbarItem(placement: .confirmationAction) {
+                ToolbarItemGroup(placement: .confirmationAction) {
+                    if newTemplateCategory == .strength, !newExercises.isEmpty {
+                        EditButton()
+                    }
                     Button("Save") {
                         saveTemplate()
                     }
@@ -402,6 +429,23 @@ struct TemplateLibraryView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func templateLiftPicker(
+        mode: TemplateLiftPickerMode?,
+        onPick: @escaping (String) -> Void
+    ) -> some View {
+        let title: String = {
+            if case .replace = mode { return "Change Lift" }
+            return "Choose Lift"
+        }()
+        LiftPickerView(
+            title: title,
+            embedsNavigationStack: false,
+            onSelect: { lift in onPick(lift.name) },
+            onSelectCustom: { name in onPick(name) }
+        )
     }
 
     private var weeklyTemplateSheet: some View {
@@ -655,27 +699,39 @@ private struct TemplateLibraryAlertsModifier: ViewModifier {
         content
             .alert("Delete template?", isPresented: $showingDeleteAlert, presenting: templatePendingDelete) { template in
                 Button("Delete", role: .destructive) {
-                    viewModel.deleteTemplate(id: template.id)
+                    let id = template.id
+                    templatePendingDelete = nil
+                    viewModel.deleteTemplate(id: id)
                 }
-                Button("Cancel", role: .cancel) { }
+                Button("Cancel", role: .cancel) {
+                    templatePendingDelete = nil
+                }
             } message: { template in
-                Text("\(template.name) will be removed from your library. Applied workouts are not affected.")
+                Text("\"\(template.name)\" will be removed from your library. Applied workouts are not affected.")
             }
             .alert("Delete template?", isPresented: $showingEnduranceDeleteAlert, presenting: endurancePendingDelete) { template in
                 Button("Delete", role: .destructive) {
-                    viewModel.deleteEnduranceTemplate(id: template.id)
+                    let id = template.id
+                    endurancePendingDelete = nil
+                    viewModel.deleteEnduranceTemplate(id: id)
                 }
-                Button("Cancel", role: .cancel) { }
+                Button("Cancel", role: .cancel) {
+                    endurancePendingDelete = nil
+                }
             } message: { template in
-                Text("\(template.name) will be removed from your library. Applied workouts are not affected.")
+                Text("\"\(template.name)\" will be removed from your library. Applied workouts are not affected.")
             }
             .alert("Delete block?", isPresented: $showingBlockDeleteAlert, presenting: blockPendingDelete) { block in
                 Button("Delete", role: .destructive) {
-                    weekViewModel.deletePeriodizedBlock(id: block.id)
+                    let id = block.id
+                    blockPendingDelete = nil
+                    weekViewModel.deletePeriodizedBlock(id: id)
                 }
-                Button("Cancel", role: .cancel) { }
+                Button("Cancel", role: .cancel) {
+                    blockPendingDelete = nil
+                }
             } message: { block in
-                Text("\(block.name) will be removed from your library. Applied calendar weeks are not affected.")
+                Text("\"\(block.name)\" will be removed from your library. Applied calendar weeks are not affected.")
             }
             .alert("Apply Template to Current Week?", isPresented: $showingApplyAlert, presenting: templateToApply) { template in
                 if weekViewModel.hasWorkoutsInCurrentWeek() {
@@ -840,6 +896,8 @@ private struct TemplateEditSheet: View {
     @Binding var editExerciseMaxReps: Int
     @Binding var isPresented: Bool
 
+    @State private var liftPickerMode: TemplateLiftPickerMode?
+
     var body: some View {
         NavigationStack {
             Form {
@@ -853,15 +911,48 @@ private struct TemplateEditSheet: View {
                     exerciseName: $editExerciseName,
                     exerciseSetsCount: $editExerciseSetsCount,
                     exerciseMinReps: $editExerciseMinReps,
-                    exerciseMaxReps: $editExerciseMaxReps
+                    exerciseMaxReps: $editExerciseMaxReps,
+                    liftPickerMode: $liftPickerMode
                 )
             }
             .navigationTitle("Edit Template")
+            .navigationDestination(isPresented: Binding(
+                get: { liftPickerMode != nil },
+                set: { if !$0 { liftPickerMode = nil } }
+            )) {
+                let title: String = {
+                    if case .replace = liftPickerMode { return "Change Lift" }
+                    return "Choose Lift"
+                }()
+                LiftPickerView(
+                    title: title,
+                    embedsNavigationStack: false,
+                    onSelect: { lift in
+                        applyTemplateLiftPick(
+                            lift.name,
+                            mode: liftPickerMode,
+                            exercises: $editExercises,
+                            draftName: $editExerciseName
+                        )
+                    },
+                    onSelectCustom: { name in
+                        applyTemplateLiftPick(
+                            name,
+                            mode: liftPickerMode,
+                            exercises: $editExercises,
+                            draftName: $editExerciseName
+                        )
+                    }
+                )
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { isPresented = false }
                 }
-                ToolbarItem(placement: .confirmationAction) {
+                ToolbarItemGroup(placement: .confirmationAction) {
+                    if !editExercises.isEmpty {
+                        EditButton()
+                    }
                     Button("Save", action: save)
                         .disabled(isSaveDisabled)
                 }
@@ -1033,19 +1124,43 @@ private struct EnduranceTemplateEditSheet: View {
     }
 }
 
+private enum TemplateLiftPickerMode: Hashable {
+    case add
+    case replace(UUID)
+}
+
+private func applyTemplateLiftPick(
+    _ name: String,
+    mode: TemplateLiftPickerMode?,
+    exercises: Binding<[NewExerciseInput]>,
+    draftName: Binding<String>
+) {
+    let canonical = LiftCatalog.canonicalName(for: name)
+    switch mode {
+    case .replace(let id):
+        guard let index = exercises.wrappedValue.firstIndex(where: { $0.id == id }) else { return }
+        exercises.wrappedValue[index].name = canonical
+    case .add, .none:
+        draftName.wrappedValue = canonical
+    }
+}
+
 private struct StrengthTemplateExerciseEditor: View {
     @Binding var exercises: [NewExerciseInput]
     @Binding var exerciseName: String
     @Binding var exerciseSetsCount: String
     @Binding var exerciseMinReps: Int
     @Binding var exerciseMaxReps: Int
-    @State private var showingLiftPicker = false
+    /// Owned by the enclosing NavigationStack (create/edit sheet) so push works.
+    @Binding var liftPickerMode: TemplateLiftPickerMode?
 
     var body: some View {
         Section("Lifts & sets") {
             VStack(alignment: .leading, spacing: 8) {
+                // Push into the parent NavigationStack — nested .sheet fails while edit/create is already a sheet.
+                // Avoid NavigationLink here: Form + editMode swallows its taps.
                 Button {
-                    showingLiftPicker = true
+                    liftPickerMode = .add
                 } label: {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
@@ -1056,9 +1171,9 @@ private struct StrengthTemplateExerciseEditor: View {
                                 .foregroundStyle(exerciseName.isEmpty ? .secondary : .primary)
                         }
                         Spacer()
-                        Image(systemName: "chevron.up.chevron.down")
+                        Image(systemName: "chevron.right")
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.tertiary)
                     }
                 }
                 .buttonStyle(.plain)
@@ -1107,38 +1222,51 @@ private struct StrengthTemplateExerciseEditor: View {
             if !exercises.isEmpty {
                 ForEach(exercises) { exercise in
                     HStack(alignment: .center, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(exercise.name)
-                                .font(.subheadline.weight(.semibold))
-                            Text("\(exercise.setsCount) sets • \(exercise.repRange)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                        Button {
+                            liftPickerMode = .replace(exercise.id)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 6) {
+                                    Text(exercise.name)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(.primary)
+                                    Image(systemName: "pencil.circle")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Text("\(exercise.setsCount) sets • \(exercise.repRange)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
+                        .buttonStyle(.borderless)
                         Spacer()
                         Image(systemName: "line.3.horizontal")
                             .foregroundStyle(.secondary)
+                    }
+                    .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                        Button("Catalog") {
+                            liftPickerMode = .replace(exercise.id)
+                        }
+                        .tint(.accentColor)
+                    }
+                    .contextMenu {
+                        Button {
+                            liftPickerMode = .replace(exercise.id)
+                        } label: {
+                            Label("Replace from catalog", systemImage: "list.bullet.rectangle")
+                        }
                     }
                 }
                 .onDelete { offsets in
                     exercises.remove(atOffsets: offsets)
                 }
                 .onMove(perform: moveExercises)
-                Text("Swipe to delete; drag to reorder")
+                Text("Tap a lift to rename from the catalog. Use Edit to delete or reorder.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .padding(.top, 4)
             }
-        }
-        .environment(\.editMode, .constant(.active))
-        .sheet(isPresented: $showingLiftPicker) {
-            LiftPickerView(
-                onSelect: { lift in
-                    exerciseName = lift.name
-                },
-                onSelectCustom: { name in
-                    exerciseName = name
-                }
-            )
         }
     }
 
