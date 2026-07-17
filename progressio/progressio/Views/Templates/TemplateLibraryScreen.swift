@@ -1039,11 +1039,30 @@ private struct StrengthTemplateExerciseEditor: View {
     @Binding var exerciseSetsCount: String
     @Binding var exerciseMinReps: Int
     @Binding var exerciseMaxReps: Int
+    @State private var showingLiftPicker = false
 
     var body: some View {
         Section("Lifts & sets") {
             VStack(alignment: .leading, spacing: 8) {
-                TextField("Lift name", text: $exerciseName)
+                Button {
+                    showingLiftPicker = true
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Lift")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(exerciseName.isEmpty ? "Choose from catalog" : exerciseName)
+                                .foregroundStyle(exerciseName.isEmpty ? .secondary : .primary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+
                 TextField("Number of sets", text: $exerciseSetsCount)
                     .keyboardType(.numberPad)
                 VStack(alignment: .leading, spacing: 6) {
@@ -1111,11 +1130,21 @@ private struct StrengthTemplateExerciseEditor: View {
             }
         }
         .environment(\.editMode, .constant(.active))
+        .sheet(isPresented: $showingLiftPicker) {
+            LiftPickerView(
+                onSelect: { lift in
+                    exerciseName = lift.name
+                },
+                onSelectCustom: { name in
+                    exerciseName = name
+                }
+            )
+        }
     }
 
     private func addExercise() {
         guard let setsCount = Int(exerciseSetsCount), setsCount > 0 else { return }
-        let trimmedName = exerciseName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedName = LiftCatalog.canonicalName(for: exerciseName)
         guard !trimmedName.isEmpty, exerciseMinReps < exerciseMaxReps else { return }
         let rangeText = "\(exerciseMinReps)-\(exerciseMaxReps)"
         exercises.append(

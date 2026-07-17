@@ -52,6 +52,9 @@ struct HistoryView: View {
                     }
                     reload()
                 },
+                loadPriorComparison: { liftNames in
+                    weekViewModel.strengthComparison(for: workout, liftNames: liftNames)
+                },
                 onCompleteStatus: {
                     weekViewModel.mutateWorkout(weekStart: entry.weekStart, workoutID: workout.id) { w in
                         w.status = .completed

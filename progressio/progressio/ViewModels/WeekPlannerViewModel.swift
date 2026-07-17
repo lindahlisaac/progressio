@@ -1045,4 +1045,14 @@ final class WeekPlannerViewModel: ObservableObject {
             }
         }
     }
+
+    /// Newest-first local scan for prior strength performance (per-lift + similar session).
+    func strengthComparison(for workout: Workout, liftNames: [String]) -> StrengthComparisonResult {
+        StrengthHistoryLookup.compare(
+            current: workout,
+            currentLiftNames: liftNames,
+            currentWeekPlan: weekPlan,
+            calendar: calendar
+        )
+    }
 }

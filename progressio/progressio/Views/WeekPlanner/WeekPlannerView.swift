@@ -519,6 +519,9 @@ struct WeekPlannerView: View {
                 onTitleChange: { title in
                     viewModel.setWorkoutTitle(workoutID: workout.id, title: title)
                 },
+                loadPriorComparison: { liftNames in
+                    viewModel.strengthComparison(for: workout, liftNames: liftNames)
+                },
                 onCompleteStatus: {
                     viewModel.setWorkoutStatus(workoutID: workout.id, status: .completed)
                 },

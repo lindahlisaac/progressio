@@ -5,9 +5,15 @@ struct StrengthLogView: View {
     let workout: Workout
     var onNoteChange: ((String) -> Void)?
     var onTitleChange: ((String) -> Void)?
+    /// Loads prior lift/session comparison from local week files (newest-first).
+    var loadPriorComparison: (([String]) -> StrengthComparisonResult)?
     @State private var exercises: [ExerciseLog]
     private let initialExercises: [ExerciseLog]
     @State private var showingAddExerciseSheet = false
+    @State private var showingReorderSheet = false
+    @State private var showingPriorSessionSheet = false
+    @State private var renamingExerciseID: UUID?
+    @State private var comparison: StrengthComparisonResult = .empty
     @State private var newExerciseName: String = ""
     @FocusState private var isInputFocused: Bool
     @State private var isLocked: Bool
@@ -25,52 +31,11 @@ struct StrengthLogView: View {
     @State private var noteWorkItem: DispatchWorkItem?
     @State private var titleWorkItem: DispatchWorkItem?
 
-    private struct ExerciseSection: View {
-        @Binding var exercise: ExerciseLog
-        var removeSets: (IndexSet, UUID) -> Void
-        var addSet: (UUID) -> Void
-        var isInputFocused: FocusState<Bool>.Binding
-        var onChanged: () -> Void
-        var isLocked: Bool
-
-        var body: some View {
-            Section(header: Text(exercise.name)) {
-                ForEach(exercise.sets.indices, id: \.self) { idx in
-                    SetRow(set: $exercise.sets[idx], isInputFocused: isInputFocused, onChanged: onChanged, isLocked: isLocked)
-                }
-                .onDelete { indexSet in
-                    guard !isLocked else { return }
-                    removeSets(indexSet, exercise.id)
-                    onChanged()
-                }
-                .deleteDisabled(isLocked)
-
-                Button {
-                    addSet(exercise.id)
-                    onChanged()
-                } label: {
-                    Label("Add set", systemImage: "plus.circle")
-                }
-                .disabled(isLocked)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Exercise RPE (optional)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    TextField("RPE", text: $exercise.rpe)
-                        .keyboardType(.decimalPad)
-                        .focused(isInputFocused)
-                        .onChange(of: exercise.rpe) { _ in onChanged() }
-                        .disabled(isLocked)
-                }
-            }
-        }
-    }
-
     init(
         workout: Workout,
         onNoteChange: ((String) -> Void)? = nil,
         onTitleChange: ((String) -> Void)? = nil,
+        loadPriorComparison: (([String]) -> StrengthComparisonResult)? = nil,
         onCompleteStatus: (() -> Void)? = nil,
         onUnlockStatus: (() -> Void)? = nil,
         onCompletedSnapshotPersist: ((StrengthRoutineSnapshot) -> Void)? = nil,
@@ -79,6 +44,7 @@ struct StrengthLogView: View {
         self.workout = workout
         self.onNoteChange = onNoteChange
         self.onTitleChange = onTitleChange
+        self.loadPriorComparison = loadPriorComparison
         self.onCompleteStatus = onCompleteStatus
         self.onUnlockStatus = onUnlockStatus
         self.onCompletedSnapshotPersist = onCompletedSnapshotPersist
@@ -87,7 +53,6 @@ struct StrengthLogView: View {
         let seededFromSnapshot = Self.seedExercises(from: workout)
         self.initialExercises = seededFromSnapshot
 
-        // Prefer workout-embedded snapshot (synced). One-time fallback to legacy local file if present.
         if seededFromSnapshot.isEmpty,
            let loaded = StrengthLogPersistence.load(from: StrengthLogPersistence.strengthLogURL(for: workout.id)) {
             _exercises = State(initialValue: loaded.exercises)
@@ -139,6 +104,31 @@ struct StrengthLogView: View {
                 .onChange(of: timePeriod) { newValue in
                     onTimePeriodChange?(newValue)
                 }
+                if let prior = comparison.similarSession {
+                    Button {
+                        showingPriorSessionSheet = true
+                    } label: {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Last similar session")
+                                    .font(.subheadline.weight(.semibold))
+                                Text("\(prior.title) · \(Self.shortDate.string(from: prior.date))")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text(prior.matchLabel)
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
             }
             Section("Notes") {
                 TextEditor(text: $note)
@@ -149,17 +139,108 @@ struct StrengthLogView: View {
                         scheduleNotePersist(newValue)
                     }
             }
+
             ForEach($exercises) { $exercise in
-                ExerciseSection(
-                    exercise: $exercise,
-                    removeSets: removeSets,
-                    addSet: addSet,
-                    isInputFocused: $isInputFocused,
-                    onChanged: persistState,
-                    isLocked: isLocked
-                )
+                Section {
+                    // Lift title: tap name to swap via catalog; ≡ reorders whole lifts.
+                    HStack(alignment: .top, spacing: 12) {
+                        Button {
+                            guard !isLocked else { return }
+                            renamingExerciseID = exercise.id
+                        } label: {
+                            HStack(alignment: .top, spacing: 8) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    HStack(spacing: 6) {
+                                        Text(exercise.name)
+                                            .font(.headline)
+                                            .foregroundStyle(.primary)
+                                            .multilineTextAlignment(.leading)
+                                        if !isLocked {
+                                            Image(systemName: "pencil.circle")
+                                                .font(.subheadline)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    if let prior = priorPerformance(for: exercise.name) {
+                                        Text("Last: \(prior.condensedLine)")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                        Text(Self.shortDate.string(from: prior.date))
+                                            .font(.caption2)
+                                            .foregroundStyle(.tertiary)
+                                    } else if !isLocked {
+                                        Text("Tap to change lift")
+                                            .font(.caption2)
+                                            .foregroundStyle(.tertiary)
+                                    }
+                                }
+                                Spacer(minLength: 0)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isLocked)
+                        .accessibilityLabel("Change \(exercise.name)")
+                        .accessibilityHint("Opens lift catalog to swap this exercise")
+
+                        if !isLocked, exercises.count > 1 {
+                            Button {
+                                showingReorderSheet = true
+                            } label: {
+                                Image(systemName: "line.3.horizontal")
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 44, height: 36, alignment: .trailing)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Reorder lifts")
+                        }
+                    }
+                    .listRowBackground(Color(.secondarySystemBackground))
+
+                    ForEach($exercise.sets) { $set in
+                        SetRow(
+                            set: $set,
+                            isInputFocused: $isInputFocused,
+                            onChanged: persistState,
+                            isLocked: isLocked
+                        )
+                    }
+                    .onDelete { indexSet in
+                        guard !isLocked else { return }
+                        removeSets(indexSet, in: exercise.id)
+                    }
+                    .deleteDisabled(isLocked)
+
+                    Button {
+                        addSet(to: exercise.id)
+                    } label: {
+                        Label("Add set", systemImage: "plus.circle")
+                    }
+                    .disabled(isLocked)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Exercise RPE (optional)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        TextField("RPE", text: $exercise.rpe)
+                            .keyboardType(.decimalPad)
+                            .focused($isInputFocused)
+                            .onChange(of: exercise.rpe) { _ in persistState() }
+                            .disabled(isLocked)
+                    }
+                }
             }
             .onDelete(perform: deleteExercise)
+            .deleteDisabled(isLocked)
+
+            if !isLocked, exercises.count > 1 {
+                Section {
+                    Text("Tap ≡ on a lift to reorder the routine. Sets stay with their lift.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
         .navigationTitle(title.isEmpty ? "Strength" : title)
         .navigationBarTitleDisplayMode(.inline)
@@ -170,6 +251,7 @@ struct StrengthLogView: View {
                 } label: {
                     Label("Add lift", systemImage: "plus")
                 }
+                .disabled(isLocked)
             }
             ToolbarItem(placement: .cancellationAction) {
                 Button(role: .destructive) {
@@ -177,7 +259,7 @@ struct StrengthLogView: View {
                 } label: {
                     Label("Reset", systemImage: "arrow.counterclockwise")
                 }
-                .disabled(exercises == initialExercises)
+                .disabled(isLocked || exercises == initialExercises)
             }
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
@@ -198,29 +280,54 @@ struct StrengthLogView: View {
         }
         .onAppear {
             reloadStateIfAvailable()
+            refreshPriorComparison()
+        }
+        .onChange(of: exercises.map(\.name)) { _ in
+            refreshPriorComparison()
         }
         .onDisappear {
             persistState()
             flushNoteAndTitle()
         }
         .sheet(isPresented: $showingAddExerciseSheet) {
-            NavigationStack {
-                Form {
-                    TextField("Lift name", text: $newExerciseName)
-                        .focused($isInputFocused)
+            LiftPickerView(
+                title: "Add Lift",
+                onSelect: { lift in
+                    appendLift(named: lift.name)
+                },
+                onSelectCustom: { name in
+                    appendLift(named: name)
                 }
-                .navigationTitle("New Lift")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { dismissAddExercise() }
+            )
+        }
+        .sheet(isPresented: Binding(
+            get: { renamingExerciseID != nil },
+            set: { if !$0 { renamingExerciseID = nil } }
+        )) {
+            LiftPickerView(
+                title: "Change Lift",
+                onSelect: { lift in
+                    if let id = renamingExerciseID {
+                        renameLift(id: id, to: lift.name)
                     }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Add") {
-                            addExercise()
-                        }
-                        .disabled(newExerciseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    renamingExerciseID = nil
+                },
+                onSelectCustom: { name in
+                    if let id = renamingExerciseID {
+                        renameLift(id: id, to: name)
                     }
+                    renamingExerciseID = nil
                 }
+            )
+        }
+        .sheet(isPresented: $showingReorderSheet) {
+            ReorderLiftsSheet(exercises: $exercises) {
+                persistState()
+            }
+        }
+        .sheet(isPresented: $showingPriorSessionSheet) {
+            if let prior = comparison.similarSession {
+                PriorStrengthSessionSheet(session: prior)
             }
         }
         .alert("Clear log?", isPresented: $showingResetConfirm) {
@@ -256,7 +363,27 @@ struct StrengthLogView: View {
         }
     }
 
+    private func priorPerformance(for liftName: String) -> PriorLiftPerformance? {
+        comparison.priorByLift[StrengthHistoryLookup.normalizeLiftName(liftName)]
+    }
+
+    private func refreshPriorComparison() {
+        guard let loadPriorComparison else {
+            comparison = .empty
+            return
+        }
+        comparison = loadPriorComparison(exercises.map(\.name))
+    }
+
+    private static let shortDate: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter
+    }()
+
     private func deleteExercise(at offsets: IndexSet) {
+        guard !isLocked else { return }
         exercises.remove(atOffsets: offsets)
         persistState()
     }
@@ -274,12 +401,26 @@ struct StrengthLogView: View {
     }
 
     private func addExercise() {
-        let trimmed = newExerciseName.trimmingCharacters(in: .whitespacesAndNewlines)
+        appendLift(named: newExerciseName)
+    }
+
+    private func appendLift(named rawName: String) {
+        let trimmed = LiftCatalog.canonicalName(for: rawName)
         guard !trimmed.isEmpty else { return }
         let exercise = ExerciseLog(name: trimmed, sets: [SetLog(weight: "", reps: "", repHint: "")], rpe: "")
         exercises.append(exercise)
         dismissAddExercise()
         persistState()
+    }
+
+    private func renameLift(id: UUID, to rawName: String) {
+        let trimmed = LiftCatalog.canonicalName(for: rawName)
+        guard !trimmed.isEmpty,
+              let index = exercises.firstIndex(where: { $0.id == id })
+        else { return }
+        exercises[index].name = trimmed
+        persistState()
+        refreshPriorComparison()
     }
 
     private func dismissAddExercise() {
@@ -350,12 +491,113 @@ struct StrengthLogView: View {
     private func persistState() {
         persistWorkItem?.cancel()
         persistWorkItem = nil
-        // Strength completion lives on the workout model (CloudKit week sync).
         onCompletedSnapshotPersist?(TemplateSnapshot.completedSnapshot(from: exercises))
     }
 
-    private func reloadStateIfAvailable() {
-        // No separate file reload; week plan snapshot is source of truth after Task 021.
+    private func reloadStateIfAvailable() {}
+}
+
+/// Flat list of whole lifts — List `onMove` is safe here because each row is one exercise.
+private struct ReorderLiftsSheet: View {
+    @Binding var exercises: [ExerciseLog]
+    var onDone: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(exercises) { exercise in
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(exercise.name)
+                                    .font(.body.weight(.semibold))
+                                Text("\(exercise.sets.count) set\(exercise.sets.count == 1 ? "" : "s")")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "line.3.horizontal")
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 2)
+                    }
+                    .onMove(perform: move)
+                } footer: {
+                    Text("Drag ≡ to change the order you perform lifts. Sets stay with each lift.")
+                }
+            }
+            .environment(\.editMode, .constant(.active))
+            .navigationTitle("Reorder Lifts")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        onDone()
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+
+    private func move(from offsets: IndexSet, to destination: Int) {
+        exercises.move(fromOffsets: offsets, toOffset: destination)
+    }
+}
+
+private struct PriorStrengthSessionSheet: View {
+    let session: PriorStrengthSession
+    @Environment(\.dismiss) private var dismiss
+
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter
+    }()
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    LabeledContent("Date", value: Self.dateFormatter.string(from: session.date))
+                    LabeledContent("Match", value: session.matchLabel)
+                } header: {
+                    Text(session.title)
+                }
+
+                ForEach(session.lifts) { lift in
+                    Section(lift.name) {
+                        ForEach(Array(lift.sets.enumerated()), id: \.offset) { index, set in
+                            HStack {
+                                Text("Set \(index + 1)")
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text(setLine(set))
+                                    .fontWeight(.medium)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Last Similar Session")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func setLine(_ set: (weight: String, reps: String)) -> String {
+        let w = set.weight.trimmingCharacters(in: .whitespacesAndNewlines)
+        let r = set.reps.trimmingCharacters(in: .whitespacesAndNewlines)
+        if w.isEmpty, r.isEmpty { return "—" }
+        if w.isEmpty { return "×\(r)" }
+        if r.isEmpty { return "\(w) lb" }
+        return "\(w) lb × \(r)"
     }
 }
 
@@ -426,4 +668,3 @@ private struct SetRow: View {
         .padding(.vertical, 4)
     }
 }
-
