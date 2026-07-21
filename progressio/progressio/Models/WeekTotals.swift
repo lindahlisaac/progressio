@@ -6,13 +6,19 @@ struct WeekModalityTotal: Identifiable, Equatable {
     var plannedAmount: Double
     var completedAmount: Double
     var unitLabel: String
+    /// Sum of planned elevation gain (ft) for this modality; 0 when none entered.
+    var plannedElevation: Double = 0
 
     var id: String { activityType.rawValue }
 
     var displayLine: String {
         let planned = format(plannedAmount)
         let completed = format(completedAmount)
-        return "\(activityType.rawValue): \(completed) / \(planned) \(unitLabel)"
+        var line = "\(activityType.rawValue): \(completed) / \(planned) \(unitLabel)"
+        if plannedElevation > 0 {
+            line += " · \(formatElevation(plannedElevation)) ft vert"
+        }
+        return line
     }
 
     private func format(_ value: Double) -> String {
@@ -23,6 +29,13 @@ struct WeekModalityTotal: Identifiable, Equatable {
             return String(Int(value.rounded()))
         }
         return String(format: "%.1f", value)
+    }
+
+    private func formatElevation(_ value: Double) -> String {
+        if value == value.rounded() {
+            return String(Int(value.rounded()))
+        }
+        return String(format: "%.0f", value)
     }
 }
 
@@ -60,7 +73,9 @@ enum WeekTotals {
 
             var planned = 0.0
             var completed = 0.0
+            var plannedElevation = 0.0
             for workout in matching {
+                plannedElevation += miles(from: workout.plannedElevation)
                 if useDuration {
                     planned += durationHours(from: workout.plannedDuration)
                     if workout.status == .completed || workout.status == .partiallyCompleted {
@@ -81,7 +96,8 @@ enum WeekTotals {
                     activityType: activity,
                     plannedAmount: planned,
                     completedAmount: completed,
-                    unitLabel: useDuration ? "hr" : "mi"
+                    unitLabel: useDuration ? "hr" : "mi",
+                    plannedElevation: plannedElevation
                 )
             )
         }

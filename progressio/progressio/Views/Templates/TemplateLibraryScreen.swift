@@ -428,6 +428,7 @@ struct TemplateLibraryView: View {
                     .disabled(isSaveDisabled)
                 }
             }
+            .keyboardDoneButton()
         }
     }
 
@@ -466,6 +467,7 @@ struct TemplateLibraryView: View {
                         .disabled(weeklyName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
+                .keyboardDoneButton()
                 .sheet(isPresented: $showingWorkoutTemplatePicker) {
                     workoutTemplatePickerSheet
                 }
@@ -957,6 +959,7 @@ private struct TemplateEditSheet: View {
                         .disabled(isSaveDisabled)
                 }
             }
+            .keyboardDoneButton()
         }
     }
 
@@ -1106,6 +1109,7 @@ private struct EnduranceTemplateEditSheet: View {
                         .disabled(editName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
+            .keyboardDoneButton()
         }
     }
 

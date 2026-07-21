@@ -124,6 +124,7 @@ struct LiftPickerView: View {
                 }
             }
         }
+        .keyboardDoneButton()
     }
 
     private func liftRow(_ lift: CatalogLift) -> some View {

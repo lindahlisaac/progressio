@@ -241,6 +241,25 @@ struct StrengthLogView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+
+            Section {
+                Button {
+                    if isLocked {
+                        isLocked = false
+                        isCompleted = false
+                        onUnlockStatus?()
+                        persistState()
+                    } else {
+                        markComplete()
+                    }
+                } label: {
+                    Text(isLocked ? "Edit workout" : "Complete workout")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                }
+                .tint(isLocked ? .blue : .green)
+            }
         }
         .navigationTitle(title.isEmpty ? "Strength" : title)
         .navigationBarTitleDisplayMode(.inline)
@@ -337,29 +356,6 @@ struct StrengthLogView: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("This will remove entered weights and reps for this session.")
-        }
-        .safeAreaInset(edge: .bottom) {
-            Button {
-                if isLocked {
-                    isLocked = false
-                    isCompleted = false
-                    onUnlockStatus?()
-                    persistState()
-                } else {
-                    markComplete()
-                }
-            } label: {
-                Text(isLocked ? "Edit workout" : "Complete workout")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(isLocked ? Color.blue.opacity(0.15) : Color.green.opacity(0.2))
-                    .foregroundStyle(isLocked ? Color.blue : Color.green)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .padding(.horizontal)
-            }
-            .padding(.vertical, 8)
-            .background(.ultraThinMaterial)
         }
     }
 

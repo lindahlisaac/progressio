@@ -1,0 +1,44 @@
+Task 1
+Add the persistent models and repositories/stores only.
+Task 2
+Add activity reflection capture after completion.
+Task 3
+Add physical-issue creation and linking from activity reflections.
+Task 4
+Add week completion validation.
+Task 5
+Add weekly reflection capture.
+Task 6
+Add weekly physical-issue review and resolution.
+Task 7
+Add exports, tests, and documentation.
+
+10. Questions that must be answered before implementation
+1. weekKey format: Confirm Monday startOfWeek as yyyy-MM-dd string (recommended) vs adding a WeekPlan UUID (migration-heavy — not recommended now).
+* Okay yes use yyyy-mm-dd these will always be unique and no need for uuid anyways
+1. Week complete storage: Field on WeekPlan, derived from WeeklyReflection, or both?
+* Field on week plan , reflections are not required technically if user just wants to plan.
+1. Which complete paths open reflection? Detail Complete only, or also row swipe / status toggle?
+* Any action that completes a task must open the reflection
+1. sessionRPE: Reflection only, workout completedIntensityRPE only, or write-through both?
+* Session RPE is its own field, to reflect the intensity of the given session. This shall not collide or be overlapped with strength training lift pre
+1. Resolved for week close: Treat .partiallyCompleted and .imported as closed? Soft-deleted excluded (yes)?
+* The distinction between done and not done is the status on the activity. Was it marked done? 
+1. Cardinality: One ActivityReflection per workout (recommended) or many?
+* One per workout
+1. Scale definitions: Exact enums/ranges for feel, weekRating, fatigue, painLevel, bodyArea, side, timing, trends.
+* Rate the week: 1–10 (The quality of the week as a whole.)
+* Fatigue 1–5
+    * Very fresh, Fresh, Normal, Fatigued, Very fatigued
+* Recovery 1–5:
+* Poor, Below average, Normal, Good, Excellent
+* Sleep Quality 1-5
+* Motivation to Train 1-5 : very low to very high
+* Mood 1-5
+* Life Stress 1-5
+1. Re-complete after unlock: Replace reflection, edit in place, or leave first reflection?
+* If activity is done and then reopened and the marked done again, offer user to overwrite existing reflection if one exists, else keep the existing one attached to the activity
+1. Empty week Complete Week: Allow weekly reflection with no workouts?
+* Yes, since reflection not required, this is fine. User can still reflect on why the week was empty
+1. History / export: Show reflections in History and Week Summary export in v1?
+* Yes absolutely to both. Reflections are tied to activities and weeks and should be exported fully.

@@ -1,0 +1,110 @@
+We are introducing two related features:
+Activity and weekly reflections  
+Ongoing physical discomfort tracking
+Do not implement code yet.
+First inspect the current project architecture, persistence layer, week model, activity model, completion workflows, and navigation/UI patterns.
+Read all existing architecture and implementation documentation before proposing changes.
+Goal
+Design a deterministic data model and integration plan that fits the existing architecture without duplicating data or embedding unrelated entities inside Activity or Week.
+Feature 1: Activity reflection
+When a user marks an activity as done, display a sheet that captures subjective session data.
+The reflection must:
+exist as its own persistent entity,
+reference the associated activity by ID,
+not be embedded directly inside the activity model unless the existing architecture strongly requires it,
+support zero or more physical discomfort reports.
+Proposed activity reflection fields:
+ActivityReflection
+- id
+- activityID
+- feel
+- sessionRPE
+- performanceNotes
+- createdAt
+- updatedAt
+Feature 2: Weekly reflection and week completion
+Add a “Complete Week” action at the bottom of the week view.
+Before completion:
+check whether every planned activity is either done or skipped,
+if unresolved activities remain, show the user which activities are incomplete,
+allow the user to return and close them individually,
+or explicitly mark all unresolved activities as skipped after confirmation.
+Once all activities are resolved:
+collect weekly reflection data,
+persist a weekly reflection as its own entity,
+reference the associated week by ID,
+mark the week complete only after the weekly reflection is saved.
+Proposed weekly reflection fields:
+WeeklyReflection
+- id
+- weekID
+- weekRating
+- fatigue
+- recovery
+- sleepQuality
+- motivation
+- mood
+- lifeStress
+- whatWentWell
+- nextWeekChanges
+- createdAt
+- updatedAt
+Do not duplicate calculated weekly totals inside the reflection.
+Feature 3: Physical discomfort
+Physical discomfort must be modeled as an ongoing issue that can span multiple activities and weeks.
+A physical issue is not owned by an activity or a week.
+Proposed persistent entities:
+PhysicalIssue
+- id
+- bodyArea
+- side
+- startedAt
+- status
+- resolvedAt
+- optionalTitle
+- optionalNotes
+ActivityIssueReport
+- id
+- physicalIssueID
+- activityID
+- activityReflectionID
+- painLevel
+- timing
+- trendDuringActivity
+- createdAt
+WeeklyIssueReview
+- id
+- physicalIssueID
+- weekID
+- weeklyReflectionID
+- weeklyTrend
+- resultingStatus
+- createdAt
+Physical issue lifecycle
+When discomfort is entered during an activity reflection:
+Ask for body area and side.
+Search active physical issues with the same area and side.
+Let the user attach the report to an existing issue or create a new issue.
+Never automatically assume two reports are the same issue.
+Never create a duplicate PhysicalIssue for every activity report.
+At weekly reflection:
+Pull active physical issues relevant to the week.
+Show each issue’s reports from that week.
+Ask whether the issue worsened, stayed stable, improved, or resolved.
+Only mark an issue resolved through explicit user action.
+Resolving an issue must preserve all historical reports and reviews.
+Required output for this task
+Produce:
+A map of the current relevant models and persistence flow.
+A proposed entity relationship diagram in plain text.
+Exact proposed model definitions.
+Ownership and deletion rules.
+Week-completion state transitions.
+Activity-completion state transitions.
+Files that would need modification.
+A phased implementation plan split into small tasks.
+Any conflicts with the current architecture.
+Questions that must be answered before implementation.
+Do not modify files.
+Do not create new models yet.
+Do not infer architectural decisions silently. Clearly flag each decision that is not already established by the existing codebase.

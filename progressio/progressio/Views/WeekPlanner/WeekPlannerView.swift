@@ -23,6 +23,7 @@ struct WeekPlannerView: View {
     @State private var showingPeriodizedBlockPicker = false
     @State private var selectedPeriodizedBlock: PeriodizedBlockTemplate?
     @State private var showingApplyPeriodizedAlert = false
+    @State private var showingWeekExport = false
 
     private var plannerNavigationTitle: String {
         if let name = viewModel.weekPlan.appliedPeriodizedWeekName, !name.isEmpty {
@@ -49,32 +50,42 @@ struct WeekPlannerView: View {
             }
             ToolbarItemGroup(placement: .navigationBarTrailing) {
                 Menu {
-                    Button {
-                        showingWeeklyTemplatePicker = true
-                    } label: {
-                        Label("Apply Weekly Template", systemImage: "rectangle.stack.badge.plus")
-                    }
-                    .disabled(viewModel.activeWeeklyTemplates.isEmpty)
+                    Section("Templates") {
+                        Button {
+                            showingWeeklyTemplatePicker = true
+                        } label: {
+                            Label("Apply Weekly Template", systemImage: "rectangle.stack.badge.plus")
+                        }
+                        .disabled(viewModel.activeWeeklyTemplates.isEmpty)
 
-                    Button {
-                        showingPeriodizedBlockPicker = true
-                    } label: {
-                        Label("Apply Periodized Block", systemImage: "calendar.badge.clock")
-                    }
-                    .disabled(viewModel.activePeriodizedBlocks.isEmpty)
+                        Button {
+                            showingPeriodizedBlockPicker = true
+                        } label: {
+                            Label("Apply Periodized Block", systemImage: "calendar.badge.clock")
+                        }
+                        .disabled(viewModel.activePeriodizedBlocks.isEmpty)
 
-                    Button {
-                        saveTemplateName = ""
-                        saveTemplateNote = ""
-                        showingSaveWeekAsTemplate = true
-                    } label: {
-                        Label("Save Week as Template", systemImage: "square.and.arrow.down")
+                        Button {
+                            saveTemplateName = ""
+                            saveTemplateNote = ""
+                            showingSaveWeekAsTemplate = true
+                        } label: {
+                            Label("Save Week as Template", systemImage: "square.and.arrow.down")
+                        }
+                        .disabled(!viewModel.hasWorkoutsInCurrentWeek())
                     }
-                    .disabled(!viewModel.hasWorkoutsInCurrentWeek())
+
+                    Section {
+                        Button {
+                            showingWeekExport = true
+                        } label: {
+                            Label("Export Week Summary", systemImage: "square.and.arrow.up")
+                        }
+                    }
                 } label: {
-                    Image(systemName: "rectangle.stack")
+                    Image(systemName: "ellipsis.circle")
                 }
-                .accessibilityLabel("Templates and blocks")
+                .accessibilityLabel("Week options")
 
                 Button {
                     viewModel.goToNextWeek(templates: templatesViewModel.activeTemplates)
@@ -112,6 +123,12 @@ struct WeekPlannerView: View {
                         }
                     }
             }
+        }
+        .sheet(isPresented: $showingWeekExport) {
+            WeekExportSummaryView(
+                weekPlan: viewModel.weekPlan,
+                periodizedWeekName: viewModel.weekPlan.appliedPeriodizedWeekName
+            )
         }
         .sheet(isPresented: $showingWeeklyTemplatePicker) {
             NavigationStack {
@@ -374,12 +391,20 @@ struct WeekPlannerView: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(totals) { total in
-                    HStack {
-                        Label(total.activityType.rawValue, systemImage: total.activityType.systemImage)
-                        Spacer()
-                        Text("\(formatTotal(total.completedAmount, strength: total.activityType == .strength)) / \(formatTotal(total.plannedAmount, strength: total.activityType == .strength)) \(total.unitLabel)")
-                            .font(.subheadline.monospacedDigit())
-                            .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Label(total.activityType.rawValue, systemImage: total.activityType.systemImage)
+                            Spacer()
+                            Text("\(formatTotal(total.completedAmount, strength: total.activityType == .strength)) / \(formatTotal(total.plannedAmount, strength: total.activityType == .strength)) \(total.unitLabel)")
+                                .font(.subheadline.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                        if total.plannedElevation > 0 {
+                            Text("\(formatElevation(total.plannedElevation)) ft planned vert")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                                .padding(.leading, 28)
+                        }
                     }
                 }
             }
@@ -396,6 +421,13 @@ struct WeekPlannerView: View {
             return String(Int(value.rounded()))
         }
         return String(format: "%.1f", value)
+    }
+
+    private func formatElevation(_ value: Double) -> String {
+        if value == value.rounded() {
+            return String(Int(value.rounded()))
+        }
+        return String(format: "%.0f", value)
     }
 
     private var daysSection: some View {

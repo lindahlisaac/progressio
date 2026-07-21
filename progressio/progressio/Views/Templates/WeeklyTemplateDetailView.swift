@@ -87,6 +87,7 @@ struct WeeklyTemplateDetailView: View {
                         .disabled(editName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
+                .keyboardDoneButton()
                 .sheet(isPresented: $showingWorkoutTemplatePicker) {
                     workoutTemplatePickerSheet
                 }

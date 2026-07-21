@@ -133,6 +133,7 @@ struct PeriodizedBlockDetailView: View {
                         .disabled(draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
+                .keyboardDoneButton()
                 .sheet(item: Binding(
                     get: { showingWeeklyPickerForWeek.map { WeekPickerToken(index: $0) } },
                     set: { showingWeeklyPickerForWeek = $0?.index }
@@ -265,6 +266,7 @@ struct CreatePeriodizedBlockSheet: View {
                     .disabled(draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
+            .keyboardDoneButton()
             .sheet(item: Binding(
                 get: { showingWeeklyPickerForWeek.map { WeekPickerToken(index: $0) } },
                 set: { showingWeeklyPickerForWeek = $0?.index }
