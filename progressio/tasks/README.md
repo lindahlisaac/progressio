@@ -80,6 +80,10 @@ The original roadmap assumed a greenfield data model refactor. The audit found:
 | 025 | `025-PeriodizedBlockUI.md` | **Complete** |
 | 026 | `026-ApplyPeriodizedBlocks.md` | **Complete** |
 | 027 | `027-FinalPolishAndReleaseChecklist.md` | **Complete** |
+| 028 | `028-SUBJECTIVE-DATA-COLLECTION-ANALYSIS` | **Complete** (design) |
+| 029 | `029-subj-data-impl` | **Complete** (impl; gaps → 030) |
+| 030 | `030-ReflectionGapsFrom029Review.md` | Pending |
+| 031 | `031-SingleStrengthPathOnWeekPlan.md` | Pending |
 
 ## Task File Format
 

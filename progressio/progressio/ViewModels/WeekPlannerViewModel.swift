@@ -10,6 +10,11 @@ final class WeekPlannerViewModel: ObservableObject {
     private let weeklyTemplateStore: WeeklyTemplateStore
     private let importedHealthStore: ImportedHealthWorkoutReferenceStore
     let periodizedBlockStore: PeriodizedBlockStore
+    let activityReflectionStore: ActivityReflectionStore
+    let weeklyReflectionStore: WeeklyReflectionStore
+    let physicalIssueStore: PhysicalIssueStore
+    let activityIssueReportStore: ActivityIssueReportStore
+    let weeklyIssueReviewStore: WeeklyIssueReviewStore
     private let isoFormatter: ISO8601DateFormatter = {
         let fmt = ISO8601DateFormatter()
         fmt.formatOptions = [.withFullDate]
@@ -22,6 +27,11 @@ final class WeekPlannerViewModel: ObservableObject {
     @Published private(set) var weeklyTemplates: [WeeklyTemplate] = []
     @Published var importedHealthReferences: [ImportedHealthWorkoutReference] = []
     @Published var periodizedBlocks: [PeriodizedBlockTemplate] = []
+    @Published var activityReflections: [ActivityReflection] = []
+    @Published var weeklyReflections: [WeeklyReflection] = []
+    @Published var physicalIssues: [PhysicalIssue] = []
+    @Published var activityIssueReports: [ActivityIssueReport] = []
+    @Published var weeklyIssueReviews: [WeeklyIssueReview] = []
     @Published var lastHealthKitImportAt: Date?
     @Published var lastSyncAt: Date?
     @Published var lastSyncMessage: String?
@@ -41,13 +51,23 @@ final class WeekPlannerViewModel: ObservableObject {
          unattachedStore: UnattachedRunStore = SyncingUnattachedRunStore(),
          weeklyTemplateStore: WeeklyTemplateStore = SyncingWeeklyTemplateStore(),
          importedHealthStore: ImportedHealthWorkoutReferenceStore = SyncingImportedHealthWorkoutReferenceStore(),
-         periodizedBlockStore: PeriodizedBlockStore = SyncingPeriodizedBlockStore()) {
+         periodizedBlockStore: PeriodizedBlockStore = SyncingPeriodizedBlockStore(),
+         activityReflectionStore: ActivityReflectionStore = SyncingActivityReflectionStore(),
+         weeklyReflectionStore: WeeklyReflectionStore = SyncingWeeklyReflectionStore(),
+         physicalIssueStore: PhysicalIssueStore = SyncingPhysicalIssueStore(),
+         activityIssueReportStore: ActivityIssueReportStore = SyncingActivityIssueReportStore(),
+         weeklyIssueReviewStore: WeeklyIssueReviewStore = SyncingWeeklyIssueReviewStore()) {
         self.calendar = calendar
         self.weekStore = weekStore
         self.unattachedStore = unattachedStore
         self.weeklyTemplateStore = weeklyTemplateStore
         self.importedHealthStore = importedHealthStore
         self.periodizedBlockStore = periodizedBlockStore
+        self.activityReflectionStore = activityReflectionStore
+        self.weeklyReflectionStore = weeklyReflectionStore
+        self.physicalIssueStore = physicalIssueStore
+        self.activityIssueReportStore = activityIssueReportStore
+        self.weeklyIssueReviewStore = weeklyIssueReviewStore
         let start = calendar.startOfWeek(for: Date())
         self.currentStartOfWeek = start
         if let loaded = weekStore.loadWeek(start: start) {
@@ -61,6 +81,11 @@ final class WeekPlannerViewModel: ObservableObject {
         self.weeklyTemplates = weeklyTemplateStore.loadTemplates()
         self.importedHealthReferences = importedHealthStore.loadReferences()
         self.periodizedBlocks = periodizedBlockStore.loadBlocks()
+        self.activityReflections = activityReflectionStore.load()
+        self.weeklyReflections = weeklyReflectionStore.load()
+        self.physicalIssues = physicalIssueStore.load()
+        self.activityIssueReports = activityIssueReportStore.load()
+        self.weeklyIssueReviews = weeklyIssueReviewStore.load()
         self.lastHealthKitImportAt = UserDefaults.standard.object(forKey: Self.lastHealthKitImportKey) as? Date
         self.lastSyncAt = UserDefaults.standard.object(forKey: Self.lastSyncKey) as? Date
         self.lastSyncMessage = UserDefaults.standard.string(forKey: Self.lastSyncMessageKey)
@@ -242,7 +267,10 @@ final class WeekPlannerViewModel: ObservableObject {
         persistWeek()
     }
 
-    func toggleStatus(workoutID: UUID) {
+    /// Toggles workout status. Returns `true` when the workout newly becomes `.completed`.
+    @discardableResult
+    func toggleStatus(workoutID: UUID) -> Bool {
+        var becameCompleted = false
         for dayIdx in weekPlan.days.indices {
             if let workoutIndex = weekPlan.days[dayIdx].workouts.firstIndex(where: { $0.id == workoutID }) {
                 switch weekPlan.days[dayIdx].workouts[workoutIndex].status {
@@ -250,6 +278,10 @@ final class WeekPlannerViewModel: ObservableObject {
                     weekPlan.days[dayIdx].workouts[workoutIndex].status = .planned
                 case .planned:
                     weekPlan.days[dayIdx].workouts[workoutIndex].status = .completed
+                    if weekPlan.days[dayIdx].workouts[workoutIndex].completedValues.completedAt == nil {
+                        weekPlan.days[dayIdx].workouts[workoutIndex].completedValues.completedAt = Date()
+                    }
+                    becameCompleted = true
                 case .completed, .partiallyCompleted:
                     weekPlan.days[dayIdx].workouts[workoutIndex].status = .planned
                 case .skipped:
@@ -260,6 +292,7 @@ final class WeekPlannerViewModel: ObservableObject {
                 break
             }
         }
+        return becameCompleted
     }
 
     func removeWorkout(dayID: UUID, workoutID: UUID) {
@@ -271,6 +304,7 @@ final class WeekPlannerViewModel: ObservableObject {
             weekPlan.days[dayIndex].workouts[workoutIndex]
         )
         persistWeek()
+        softDeleteReflections(forWorkoutID: workoutID)
     }
 
     /// Moves a workout to another day in the current week. Keeps the same workout ID.
@@ -467,18 +501,33 @@ final class WeekPlannerViewModel: ObservableObject {
         }
     }
 
-    func attachActualRun(to day: Date, run: UnattachedRun, toWorkoutID: UUID? = nil) {
-        guard let dayIndex = weekPlan.days.firstIndex(where: { calendar.isDate($0.date, inSameDayAs: day) }) else { return }
+    /// Attaches an imported run to a planned workout (or creates an ad-hoc completed workout).
+    /// Returns the workout ID when status newly becomes `.completed` (for reflection sheet).
+    @discardableResult
+    func attachActualRun(to day: Date, run: UnattachedRun, toWorkoutID: UUID? = nil) -> UUID? {
+        guard let dayIndex = weekPlan.days.firstIndex(where: { calendar.isDate($0.date, inSameDayAs: day) }) else {
+            return nil
+        }
         var linkedWorkoutID: UUID?
+        var newlyCompletedID: UUID?
+
         if let targetID = toWorkoutID,
            let workoutIndex = weekPlan.days[dayIndex].workouts.firstIndex(where: { $0.id == targetID }) {
+            let priorStatus = weekPlan.days[dayIndex].workouts[workoutIndex].status
             WorkoutEditing.applyAttachedRun(run.detail, to: &weekPlan.days[dayIndex].workouts[workoutIndex])
             linkedWorkoutID = targetID
+            if priorStatus != .completed {
+                newlyCompletedID = targetID
+            }
         } else if let workoutIndex = weekPlan.days[dayIndex].workouts.firstIndex(where: {
             $0.activityType.sessionKind == .run && $0.hasPlannedEnduranceDetail && !$0.hasCompletedEnduranceDetail
         }) {
+            let priorStatus = weekPlan.days[dayIndex].workouts[workoutIndex].status
             WorkoutEditing.applyAttachedRun(run.detail, to: &weekPlan.days[dayIndex].workouts[workoutIndex])
             linkedWorkoutID = weekPlan.days[dayIndex].workouts[workoutIndex].id
+            if priorStatus != .completed {
+                newlyCompletedID = linkedWorkoutID
+            }
         } else {
             var workout = Workout.run(
                 plannedDate: day,
@@ -488,6 +537,7 @@ final class WeekPlannerViewModel: ObservableObject {
             )
             WorkoutEditing.applyAttachedRun(run.detail, to: &workout)
             linkedWorkoutID = workout.id
+            newlyCompletedID = workout.id
             weekPlan.days[dayIndex].workouts.append(workout)
         }
         if let uuid = run.detail.hkWorkoutUUID {
@@ -500,6 +550,7 @@ final class WeekPlannerViewModel: ObservableObject {
         }
         removeUnattachedRun(id: run.id)
         persistWeek()
+        return newlyCompletedID
     }
 
     func detachActualRun(workoutID: UUID) {
@@ -879,6 +930,11 @@ final class WeekPlannerViewModel: ObservableObject {
         persistWeeklyTemplates()
         persistImportedHealthReferences()
         persistPeriodizedBlocks()
+        persistActivityReflections()
+        persistWeeklyReflections()
+        persistPhysicalIssues()
+        persistActivityIssueReports()
+        persistWeeklyIssueReviews()
         if let loaded = weekStore.loadWeek(start: currentStartOfWeek) {
             weekPlan = loaded
         }
@@ -886,6 +942,11 @@ final class WeekPlannerViewModel: ObservableObject {
         weeklyTemplates = weeklyTemplateStore.loadTemplates()
         importedHealthReferences = importedHealthStore.loadReferences()
         periodizedBlocks = periodizedBlockStore.loadBlocks()
+        activityReflections = activityReflectionStore.load()
+        weeklyReflections = weeklyReflectionStore.load()
+        physicalIssues = physicalIssueStore.load()
+        activityIssueReports = activityIssueReportStore.load()
+        weeklyIssueReviews = weeklyIssueReviewStore.load()
         let now = Date()
         lastSyncAt = now
         lastSyncMessage = "Synced via CloudKit"

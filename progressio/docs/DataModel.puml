@@ -1,0 +1,477 @@
+@startuml Progressio_Data_Model
+!theme plain
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+skinparam linetype ortho
+skinparam ranksep 60
+skinparam nodesep 40
+title Progressio — Domain Data Model\n(solid = composition / embed · dashed = UUID / soft link)
+
+legend right
+  |= Style |= Meaning |
+  | **Bold package** | CloudKit-synced root store |
+  | <<blob>> | Embedded in parent JSON (not own CK type) |
+  | <<legacy>> | Parallel / pre-migration types still in codebase |
+  | <<local>> | File-only; not CloudKit |
+  | <<ephemeral>> | In-memory / UI-only |
+endlegend
+
+' ─────────────────────────────────────────────
+' Sync primitives
+' ─────────────────────────────────────────────
+package "Sync primitives" {
+  class RecordMetadata <<embedded>> {
+    schemaVersion : Int
+    createdAt : Date
+    updatedAt : Date
+    isDeleted : Bool
+    deletedAt : Date?
+    etag : String?
+  }
+  note right of RecordMetadata
+    Workout uses RecordMetadata.
+    Most other roots duplicate these
+    fields inline (schemaVersion,
+    createdAt, updatedAt, isDeleted,
+    deletedAt, etag).
+  end note
+}
+
+' ─────────────────────────────────────────────
+' Calendar / week plan (CK: WeekPlan blob)
+' ─────────────────────────────────────────────
+package "Week calendar **CloudKit: WeekPlan**" {
+  class WeekPlan {
+    startOfWeek : Date
+    appliedPeriodizedWeekName : String?
+    appliedPeriodizedBlockId : UUID?
+    isWeekComplete : Bool
+    weekCompletedAt : Date?
+    + sync fields…
+  }
+
+  class DayPlan <<blob>> {
+    id : UUID
+    date : Date
+    + sync fields…
+  }
+
+  class Workout <<blob>> {
+    id : UUID
+    plannedDate : Date
+    timePeriod : TimePeriod
+    title : String
+    activityType : ActivityType
+    runType : RunType?
+    status : WorkoutStatus
+    source : WorkoutSource
+    linkedWorkoutTemplateId : UUID?
+    linkedWeeklyTemplateId : UUID?
+    linkedPeriodizedBlockId : UUID?
+    linkedHealthKitUUID : String?
+    templateName : String?
+    notes : String?
+    skipReason : String?
+  }
+
+  class PlannedValues <<blob>> {
+    plannedDistance : String?
+    plannedDuration : String?
+    plannedElevationGain : String?
+    plannedIntensityRPE : String?
+    plannedDescription : String?
+    plannedRoute : String?
+  }
+
+  class CompletedValues <<blob>> {
+    completedDistance : String?
+    completedDuration : String?
+    completedElevationGain : String?
+    completedIntensityRPE : String?
+    completedCalories : String?
+    completedHeartRateAverage : String?
+    completedHeartRateMax : String?
+    completedDescription : String?
+    completedAt : Date?
+  }
+
+  class StrengthRoutineSnapshot <<blob>> {
+    completionNotes : String?
+  }
+
+  class StrengthExerciseSnapshot <<blob>> {
+    id : UUID
+    name : String
+    orderIndex : Int
+    muscleGroup : String?
+    notes : String?
+    exerciseRPE : String?
+  }
+
+  class StrengthSetSnapshot <<blob>> {
+    id : UUID
+    setNumber : Int
+    targetReps : Int?
+    targetWeight : Double?
+    repHint : String?
+    actualReps : String?
+    actualWeight : String?
+    notes : String?
+  }
+
+  WeekPlan "1" *-- "7" DayPlan : days
+  DayPlan "1" *-- "*" Workout : workouts
+  Workout *-- RecordMetadata : metadata
+  Workout *-- PlannedValues : plannedValues
+  Workout *-- CompletedValues : completedValues
+  PlannedValues o-- "0..1" StrengthRoutineSnapshot : plannedStrength…
+  CompletedValues o-- "0..1" StrengthRoutineSnapshot : completedStrength…
+  StrengthRoutineSnapshot "1" *-- "*" StrengthExerciseSnapshot : exercises
+  StrengthExerciseSnapshot "1" *-- "*" StrengthSetSnapshot : targetSets
+}
+
+' ─────────────────────────────────────────────
+' Templates
+' ─────────────────────────────────────────────
+package "Templates" {
+  class StrengthTemplate {
+    **CK: StrengthTemplate**
+    id : UUID
+    name : String
+    category : TemplateCategory
+    note : String?
+    runCategory : RunCategory?
+    + sync fields…
+  }
+
+  class StrengthExercise <<blob>> {
+    id : UUID
+    name : String
+    sets : [StrengthSetTemplate]
+  }
+
+  class StrengthSetTemplate <<blob>> {
+    id : UUID
+    reps : Int
+    weight : Double?
+    repHint : String?
+  }
+
+  class EnduranceTemplate {
+    **CK: EnduranceTemplate**
+    id : UUID
+    name : String
+    activityType : ActivityType
+    runType : RunType?
+    plannedDistance : String?
+    plannedDuration : String?
+    plannedElevationGain : String?
+    description : String?
+    intensityRPE : String?
+    route : String?
+    + sync fields…
+  }
+
+  class WeeklyTemplate {
+    **CK: WeeklyTemplate**
+    id : UUID
+    name : String
+    note : String?
+    + sync fields…
+  }
+
+  class DayTemplate <<blob>> {
+    id : UUID
+    weekday : Int
+    + sync fields…
+  }
+
+  class WeeklyTemplateWorkoutEntry <<blob>> {
+    id : UUID
+    timePeriod : TimePeriod
+    activityType : ActivityType
+    runType : RunType?
+    title : String
+    notes : String?
+    linkedWorkoutTemplateId : UUID?
+    templateName : String?
+  }
+
+  class PeriodizedBlockTemplate {
+    **CK: PeriodizedBlockTemplate**
+    id : UUID
+    name : String
+    weekCount : Int (2–12)
+    notes : String?
+    + sync fields…
+  }
+
+  class PeriodizedBlockWeek <<blob>> {
+    id : UUID
+    weekIndex : Int
+    displayName : String
+    linkedWeeklyTemplateId : UUID?
+  }
+
+  StrengthTemplate "1" *-- "*" StrengthExercise : exercises
+  StrengthExercise "1" *-- "*" StrengthSetTemplate : sets
+  WeeklyTemplate "1" *-- "*" DayTemplate : days
+  DayTemplate "1" *-- "*" WeeklyTemplateWorkoutEntry : workoutEntries
+  WeeklyTemplateWorkoutEntry *-- PlannedValues
+  PeriodizedBlockTemplate "1" *-- "*" PeriodizedBlockWeek : weeks
+  PeriodizedBlockWeek "1" *-- "*" DayTemplate : daySnapshots
+}
+
+' Soft links from calendar ↔ templates
+Workout ..> StrengthTemplate : linkedWorkoutTemplateId\n(or EnduranceTemplate)
+Workout ..> WeeklyTemplate : linkedWeeklyTemplateId
+Workout ..> PeriodizedBlockTemplate : linkedPeriodizedBlockId
+WeekPlan ..> PeriodizedBlockTemplate : appliedPeriodizedBlockId
+WeeklyTemplateWorkoutEntry ..> StrengthTemplate : linkedWorkoutTemplateId
+PeriodizedBlockWeek ..> WeeklyTemplate : linkedWeeklyTemplateId
+
+' ─────────────────────────────────────────────
+' HealthKit / imports
+' ─────────────────────────────────────────────
+package "HealthKit / imports" {
+  class UnattachedRun {
+    **CK: UnattachedRun**
+    id : UUID
+    date : Date
+    source : String?
+    + sync fields…
+  }
+
+  class RunDetailData <<blob>> {
+    title : String
+    notes : String
+    distance : String
+    duration : String
+    averageHR : String
+    category : RunCategory?
+    hkWorkoutUUID : String?
+    elevationGain : String?
+    eventDate : Date?
+    updatedAt : Date?
+    etag : String?
+  }
+
+  class ImportedHealthWorkoutReference {
+    **CK: ImportedHealthWorkout**
+    id : UUID
+    healthKitUUID : String
+    importedAt : Date
+    linkedWorkoutId : UUID?
+    activityType : ActivityType
+    workoutStartDate : Date?
+    + sync fields…
+  }
+
+  class HealthKitImportCandidate <<ephemeral>> {
+    hkWorkoutUUID : String
+    startDate : Date
+    …mapped metrics…
+  }
+
+  class PendingHealthKitMatch <<ephemeral>> {
+    candidate
+    plannedWorkoutID : UUID
+    dayDate : Date
+  }
+
+  UnattachedRun *-- RunDetailData : detail
+  ImportedHealthWorkoutReference ..> Workout : linkedWorkoutId
+  UnattachedRun ..> Workout : attach → completedValues\n(+ linkedHealthKitUUID)
+  HealthKitImportCandidate ..> UnattachedRun : import pipeline
+  PendingHealthKitMatch ..> Workout : plannedWorkoutID
+}
+
+' ─────────────────────────────────────────────
+' Reflections & discomfort (standalone CK types)
+' ─────────────────────────────────────────────
+package "Reflections & physical issues" {
+  class ActivityReflection {
+    **CK: ActivityReflection**
+    id : UUID
+    workoutID : UUID
+    feel : SessionFeel
+    sessionRPE : Int (1–10)
+    performanceNotes : String?
+    + sync fields…
+  }
+
+  class WeeklyReflection {
+    **CK: WeeklyReflection**
+    id : UUID
+    weekKey : String (Mon yyyy-MM-dd)
+    weekRating : Int (1–10)
+    fatigue : FatigueLevel
+    recovery : RecoveryLevel
+    sleepQuality : SleepQualityLevel
+    motivation : MotivationLevel
+    mood : MoodLevel
+    lifeStress : LifeStressLevel
+    whatWentWell : String?
+    nextWeekChanges : String?
+    + sync fields…
+  }
+
+  class PhysicalIssue {
+    **CK: PhysicalIssue**
+    id : UUID
+    bodyArea : BodyArea
+    side : BodySide
+    startedAt : Date
+    status : PhysicalIssueStatus
+    resolvedAt : Date?
+    optionalTitle : String?
+    optionalNotes : String?
+    + sync fields…
+  }
+
+  class ActivityIssueReport {
+    **CK: ActivityIssueReport**
+    id : UUID
+    physicalIssueID : UUID
+    workoutID : UUID
+    activityReflectionID : UUID
+    painLevel : Int
+    timing : DiscomfortTiming
+    trendDuringActivity : DiscomfortTrend
+    + sync fields…
+  }
+
+  class WeeklyIssueReview {
+    **CK: WeeklyIssueReview**
+    id : UUID
+    physicalIssueID : UUID
+    weekKey : String
+    weeklyReflectionID : UUID
+    weeklyTrend : WeeklyIssueTrend
+    resultingStatus : PhysicalIssueStatus
+    + sync fields…
+  }
+
+  ActivityReflection ..> Workout : workoutID
+  WeeklyReflection ..> WeekPlan : weekKey ≈ startOfWeek
+  ActivityIssueReport ..> PhysicalIssue : physicalIssueID
+  ActivityIssueReport ..> Workout : workoutID
+  ActivityIssueReport ..> ActivityReflection : activityReflectionID
+  WeeklyIssueReview ..> PhysicalIssue : physicalIssueID
+  WeeklyIssueReview ..> WeeklyReflection : weeklyReflectionID
+}
+
+' ─────────────────────────────────────────────
+' Local-only / legacy parallel model
+' ─────────────────────────────────────────────
+package "Legacy / local-only (still in tree)" {
+  class StrengthLogState <<local>> {
+    sessionID : UUID
+    isCompleted : Bool
+    exercises : [ExerciseLog]
+    + sync fields… (file only)
+  }
+
+  class ExerciseLog <<local>> {
+    id : UUID
+    name : String
+    rpe : String
+  }
+
+  class SetLog <<local>> {
+    id : UUID
+    weight : String
+    reps : String
+    repHint : String
+  }
+
+  class PlannedSession <<legacy>> {
+    id : UUID
+    title : String
+    kind : SessionKind
+    status : PlanStatus
+    runDetail / actualRun : RunDetailData?
+    strengthLog : StrengthLogState?
+  }
+
+  class MigratedWeekPlan <<blob>> {
+    formatVersion : Int
+    …mirrors WeekPlan for on-disk/CK payload…
+  }
+
+  StrengthLogState "1" *-- "*" ExerciseLog
+  ExerciseLog "1" *-- "*" SetLog
+  PlannedSession o-- StrengthLogState
+  PlannedSession o-- RunDetailData
+  note bottom of StrengthLogState
+    Mid-session strength edits still
+    use strengthlog-{id}.json.
+    Completion also embeds into
+    Workout.completedValues snapshot.
+  end note
+  note bottom of PlannedSession
+    Pre-Task-004 session model.
+    Weekly templates migrate
+    PlannedSession → WeeklyTemplateWorkoutEntry.
+  end note
+}
+
+' ─────────────────────────────────────────────
+' Catalog (static, not persisted as entities)
+' ─────────────────────────────────────────────
+package "Static catalog" {
+  class CatalogLift <<ephemeral>> {
+    id : String
+    name : String
+    muscleGroup : LiftMuscleGroup
+    aliases : [String]
+  }
+}
+
+' ─────────────────────────────────────────────
+' Key enums (collapsed)
+' ─────────────────────────────────────────────
+package "Enums (selected)" {
+  enum ActivityType {
+    roadRun
+    trailRun
+    walk
+    bike
+    strength
+  }
+  enum WorkoutStatus {
+    planned
+    completed
+    partiallyCompleted
+    skipped
+    imported
+  }
+  enum WorkoutSource {
+    manual
+    template
+    weeklyTemplate
+    periodized
+    appleHealth
+  }
+  enum TimePeriod {
+    am
+    pm
+  }
+}
+
+Workout --> ActivityType
+Workout --> WorkoutStatus
+Workout --> WorkoutSource
+Workout --> TimePeriod
+
+note as N1
+  **CloudKit shape (all synced roots)**
+  CKRecord fields: payload (JSON Bytes), updatedAt, etag
+  Record name: {Type}-{uuid} or WeekPlan-{yyyy-MM-dd}
+  Nested types live only inside payload — not queryable columns.
+end note
+
+N1 .. WeekPlan
+N1 .. ActivityReflection
+
+@enduml

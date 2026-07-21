@@ -567,20 +567,42 @@ Next work is product polish / App Store submission QA per Task 027 checklist (ma
 
 ---
 
+### Task 029 — Reflections & Physical Discomfort
+
+- **Models** — `ActivityReflection`, `WeeklyReflection`, `PhysicalIssue`, `ActivityIssueReport`, `WeeklyIssueReview` as standalone synced entities; `weekKey` = Monday `yyyy-MM-dd`.
+- **WeekPlan** — `isWeekComplete` / `weekCompletedAt` (reflections optional).
+- **UX** — Activity reflection sheet on any complete path; Complete Week footer with unresolved validation / skip-all; weekly reflection + issue review.
+- **Export / History** — Week summary and History rows include reflection data.
+
+**Major decisions**
+- Standalone File→CloudKit→SyncingStore pattern (like HealthKit refs), not embedded in week blob, so physical issues can span weeks.
+- Session RPE is independent of strength per-lift RPE and of `completedIntensityRPE`.
+- One activity reflection per workout; re-complete offers overwrite vs keep.
+- Week close treats completed / partial / skipped as resolved; planned and imported must be closed or auto-skipped.
+
+### Task 030 — Reflection Gaps from 029 Review
+
+- **HealthKit complete → reflection** — `attachActualRun` returns the workout ID only when status newly becomes `.completed`. Planner UI (`WeekPlannerView` / unattached sheet) sets `reflectionWorkoutID` so the same activity reflection sheet + overwrite prompt runs as swipe/detail complete. (Match-accept was removed earlier; Unattached attach is the HK complete path.)
+- **Overwrite replaces issue reports** — `replaceActivityIssueReport` soft-deletes prior active `ActivityIssueReport`s for the workout before creating a new one; clearing discomfort on overwrite soft-deletes priors without creating a replacement.
+- **Orphan cleanup** — Soft-deleting a workout also soft-deletes its `ActivityReflection` and related active reports (`softDeleteReflections`).
+- **Weekly issue list (v1)** — Weekly reflection still shows **all active** `PhysicalIssue`s globally (not limited to the current week). Acceptable for v1; tighten later if needed.
+- **Tests** — `ReflectionLogicTests` covers WeekKey, unresolved filter, one-reflection upsert/overwrite, report replace, resolve-via-weekly-review, and workout soft-delete cascade.
+
+---
+
 ## Source File Index
 
 ```
 progressio/progressio/
-├── App/ContentView.swift            # Plan / Templates / History / Settings
-├── Models/PeriodizedBlockTemplate.swift
-├── Models/ImportedHealthWorkoutReference.swift
-├── Services/HealthKitImportService.swift
-├── ViewModels/WeekPlannerViewModel+PeriodizedBlocks.swift
-├── Views/History/HistoryView.swift
-├── Views/Templates/PeriodizedBlockViews.swift
+├── Models/ReflectionModels.swift
+├── Services/ReflectionFileStores.swift
+├── ViewModels/WeekPlannerViewModel+Reflections.swift
+├── Views/WeekPlanner/ActivityReflectionSheet.swift
+├── Views/WeekPlanner/WeeklyReflectionSheet.swift
 └── … (stores, migration through v7)
+progressio/progressioTests/ReflectionLogicTests.swift
 ```
 
 ---
 
-*Last updated: Tasks 023–027 complete — mega-overhaul track finished.*
+*Last updated: Task 030 Reflection Gaps from 029 Review.*

@@ -340,3 +340,25 @@ Fields:
 - source
 
 If the same HealthKit UUID already exists locally, the workout must not be imported again.
+
+## Reflections & Physical Discomfort
+
+Standalone synced entities (not embedded in WeekPlan / Workout):
+
+### ActivityReflection
+- id, workoutID, feel (1–5), sessionRPE (1–10), performanceNotes
+- One active reflection per workout
+
+### WeeklyReflection
+- id, weekKey (`yyyy-MM-dd` Monday), weekRating (1–10), fatigue/recovery/sleep/motivation/mood/lifeStress (1–5), notes
+
+### PhysicalIssue
+- Long-lived injury record: bodyArea, side, status (active/resolved), startedAt, resolvedAt
+
+### ActivityIssueReport / WeeklyIssueReview
+- Time-stamped links from activity or week reflections to a PhysicalIssue
+
+### WeekPlan completion
+- `isWeekComplete`, `weekCompletedAt` on the week envelope
+- Weekly reflection is optional when closing a week
+

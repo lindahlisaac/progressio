@@ -254,6 +254,9 @@ struct WeekPlan: Codable {
     /// Display name when this week was applied from a periodized block (e.g. "Peak").
     var appliedPeriodizedWeekName: String?
     var appliedPeriodizedBlockId: UUID?
+    /// User closed out the week (reflections optional).
+    var isWeekComplete: Bool
+    var weekCompletedAt: Date?
     var schemaVersion: Int
     var createdAt: Date?
     var updatedAt: Date?
@@ -266,6 +269,8 @@ struct WeekPlan: Codable {
         days: [DayPlan],
         appliedPeriodizedWeekName: String? = nil,
         appliedPeriodizedBlockId: UUID? = nil,
+        isWeekComplete: Bool = false,
+        weekCompletedAt: Date? = nil,
         schemaVersion: Int = WorkoutSchema.currentVersion,
         createdAt: Date? = Date(),
         updatedAt: Date? = Date(),
@@ -277,6 +282,8 @@ struct WeekPlan: Codable {
         self.days = days
         self.appliedPeriodizedWeekName = appliedPeriodizedWeekName
         self.appliedPeriodizedBlockId = appliedPeriodizedBlockId
+        self.isWeekComplete = isWeekComplete
+        self.weekCompletedAt = weekCompletedAt
         self.schemaVersion = schemaVersion
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -291,6 +298,8 @@ struct WeekPlan: Codable {
         days = try container.decode([DayPlan].self, forKey: .days)
         appliedPeriodizedWeekName = try container.decodeIfPresent(String.self, forKey: .appliedPeriodizedWeekName)
         appliedPeriodizedBlockId = try container.decodeIfPresent(UUID.self, forKey: .appliedPeriodizedBlockId)
+        isWeekComplete = try container.decodeIfPresent(Bool.self, forKey: .isWeekComplete) ?? false
+        weekCompletedAt = try container.decodeIfPresent(Date.self, forKey: .weekCompletedAt)
         schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? WorkoutSchema.currentVersion
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? updatedAt

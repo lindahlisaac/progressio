@@ -5,13 +5,19 @@ import UIKit
 struct WeekExportSummaryView: View {
     let weekPlan: WeekPlan
     var periodizedWeekName: String? = nil
+    var activityReflections: [ActivityReflection] = []
+    var weeklyReflection: WeeklyReflection? = nil
+    var physicalIssues: [PhysicalIssue] = []
     @Environment(\.dismiss) private var dismiss
     @State private var didCopy = false
 
     private var snapshot: WeekExportSummary.Snapshot {
         WeekExportSummary.make(
             from: weekPlan,
-            periodizedWeekName: periodizedWeekName
+            periodizedWeekName: periodizedWeekName,
+            activityReflections: activityReflections,
+            weeklyReflection: weeklyReflection,
+            physicalIssues: physicalIssues
         )
     }
 
@@ -21,6 +27,9 @@ struct WeekExportSummaryView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     header
                     totalsCard
+                    if !snapshot.weeklyReflectionLines.isEmpty {
+                        reflectionCard
+                    }
                     daysCard
                 }
                 .padding(16)
@@ -59,11 +68,33 @@ struct WeekExportSummaryView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
-            Text("Plan · Actual · Vert")
+            if snapshot.isWeekComplete {
+                Text("Week complete")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.green)
+            }
+            Text("Plan · Actual · Vert · Reflections")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var reflectionCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Weekly reflection")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+            ForEach(snapshot.weeklyReflectionLines, id: \.self) { line in
+                Text(line)
+                    .font(.subheadline)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private var totalsCard: some View {
@@ -157,6 +188,12 @@ struct WeekExportSummaryView: View {
                 Text(workout.detail)
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
+                    .padding(.leading, 28)
+            }
+            if let reflection = workout.reflectionLine {
+                Text(reflection)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
                     .padding(.leading, 28)
             }
         }

@@ -14,6 +14,11 @@ private enum CKRecordType {
     static let importedHealthWorkout = "ImportedHealthWorkout"
     static let periodizedBlock = "PeriodizedBlockTemplate"
     static let weekPlan = "WeekPlan"
+    static let activityReflection = "ActivityReflection"
+    static let weeklyReflection = "WeeklyReflection"
+    static let physicalIssue = "PhysicalIssue"
+    static let activityIssueReport = "ActivityIssueReport"
+    static let weeklyIssueReview = "WeeklyIssueReview"
 }
 
 private enum CKFields {
@@ -485,4 +490,128 @@ private final class CloudKitModifyQueue {
 
 private func modify(records: [CKRecord]) {
     CloudKitModifyQueue.shared.enqueue(records)
+}
+
+// MARK: - Reflection / physical-issue cloud stores
+
+private enum CloudJSONArrayStore {
+    static func load<T: Decodable>(
+        _ type: T.Type,
+        recordType: String,
+        applyMeta: @escaping (inout T, CKRecord) -> Void
+    ) -> [T] {
+        let semaphore = DispatchSemaphore(value: 0)
+        var result: [T] = []
+        let query = CKQuery(recordType: recordType, predicate: NSPredicate(value: true))
+        CKConfig.database.perform(query, inZoneWith: nil) { records, error in
+            defer { semaphore.signal() }
+            if let ckError = error as? CKError,
+               ckError.code == .unknownItem || ckError.code == .invalidArguments {
+                result = []
+                return
+            }
+            guard let records, error == nil else {
+                print("Cloud load \(recordType) error: \(String(describing: error))")
+                return
+            }
+            result = records.compactMap { record in
+                guard let data = record[CKFields.payload] as? Data else { return nil }
+                do {
+                    var decoded: T = try decodePayload(data)
+                    applyMeta(&decoded, record)
+                    return decoded
+                } catch {
+                    print("Decode \(recordType) failed: \(error)")
+                    return nil
+                }
+            }
+        }
+        semaphore.wait()
+        return result
+    }
+
+    static func save<T: Encodable>(
+        _ items: [T],
+        recordType: String,
+        id: (T) -> UUID,
+        updatedAt: (T) -> Date?,
+        etag: (T) -> String?
+    ) {
+        let records: [CKRecord] = items.compactMap { item in
+            let record = CKRecord(
+                recordType: recordType,
+                recordID: makeRecordID(id: id(item), type: recordType)
+            )
+            do {
+                record[CKFields.payload] = try encodePayload(item) as CKRecordValue
+                record[CKFields.updatedAt] = (updatedAt(item) ?? Date()) as CKRecordValue
+                if let tag = etag(item) { record[CKFields.etag] = tag as CKRecordValue }
+                return record
+            } catch {
+                print("Encode \(recordType) failed: \(error)")
+                return nil
+            }
+        }
+        modify(records: records)
+    }
+}
+
+struct CloudActivityReflectionStore: ActivityReflectionStore {
+    func load() -> [ActivityReflection] {
+        CloudJSONArrayStore.load(ActivityReflection.self, recordType: CKRecordType.activityReflection) { decoded, record in
+            decoded.updatedAt = record[CKFields.updatedAt] as? Date ?? decoded.updatedAt
+            decoded.etag = record[CKFields.etag] as? String ?? decoded.etag
+        }
+    }
+    func save(_ items: [ActivityReflection]) {
+        CloudJSONArrayStore.save(items, recordType: CKRecordType.activityReflection, id: \.id, updatedAt: \.updatedAt, etag: \.etag)
+    }
+}
+
+struct CloudWeeklyReflectionStore: WeeklyReflectionStore {
+    func load() -> [WeeklyReflection] {
+        CloudJSONArrayStore.load(WeeklyReflection.self, recordType: CKRecordType.weeklyReflection) { decoded, record in
+            decoded.updatedAt = record[CKFields.updatedAt] as? Date ?? decoded.updatedAt
+            decoded.etag = record[CKFields.etag] as? String ?? decoded.etag
+        }
+    }
+    func save(_ items: [WeeklyReflection]) {
+        CloudJSONArrayStore.save(items, recordType: CKRecordType.weeklyReflection, id: \.id, updatedAt: \.updatedAt, etag: \.etag)
+    }
+}
+
+struct CloudPhysicalIssueStore: PhysicalIssueStore {
+    func load() -> [PhysicalIssue] {
+        CloudJSONArrayStore.load(PhysicalIssue.self, recordType: CKRecordType.physicalIssue) { decoded, record in
+            decoded.updatedAt = record[CKFields.updatedAt] as? Date ?? decoded.updatedAt
+            decoded.etag = record[CKFields.etag] as? String ?? decoded.etag
+        }
+    }
+    func save(_ items: [PhysicalIssue]) {
+        CloudJSONArrayStore.save(items, recordType: CKRecordType.physicalIssue, id: \.id, updatedAt: \.updatedAt, etag: \.etag)
+    }
+}
+
+struct CloudActivityIssueReportStore: ActivityIssueReportStore {
+    func load() -> [ActivityIssueReport] {
+        CloudJSONArrayStore.load(ActivityIssueReport.self, recordType: CKRecordType.activityIssueReport) { decoded, record in
+            decoded.updatedAt = record[CKFields.updatedAt] as? Date ?? decoded.updatedAt
+            decoded.etag = record[CKFields.etag] as? String ?? decoded.etag
+        }
+    }
+    func save(_ items: [ActivityIssueReport]) {
+        CloudJSONArrayStore.save(items, recordType: CKRecordType.activityIssueReport, id: \.id, updatedAt: \.updatedAt, etag: \.etag)
+    }
+}
+
+struct CloudWeeklyIssueReviewStore: WeeklyIssueReviewStore {
+    func load() -> [WeeklyIssueReview] {
+        CloudJSONArrayStore.load(WeeklyIssueReview.self, recordType: CKRecordType.weeklyIssueReview) { decoded, record in
+            decoded.updatedAt = record[CKFields.updatedAt] as? Date ?? decoded.updatedAt
+            decoded.etag = record[CKFields.etag] as? String ?? decoded.etag
+        }
+    }
+    func save(_ items: [WeeklyIssueReview]) {
+        CloudJSONArrayStore.save(items, recordType: CKRecordType.weeklyIssueReview, id: \.id, updatedAt: \.updatedAt, etag: \.etag)
+    }
 }

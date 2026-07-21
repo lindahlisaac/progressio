@@ -230,3 +230,111 @@ struct SyncingWeekPlanStore: WeekPlanStore {
         }
     }
 }
+
+// MARK: - Reflection syncing stores
+
+private func mergeSyncedArray<T>(
+    local: [T],
+    remote: [T],
+    id: KeyPath<T, UUID>,
+    updatedAt: KeyPath<T, Date?>,
+    isDeleted: KeyPath<T, Bool>
+) -> [T] {
+    SyncRecordMerge.mergeByID(
+        local: local,
+        remote: remote,
+        id: id,
+        updatedAt: updatedAt,
+        isDeleted: isDeleted
+    )
+}
+
+struct SyncingActivityReflectionStore: ActivityReflectionStore {
+    private let local: ActivityReflectionStore
+    private let cloud: ActivityReflectionStore
+    init(local: ActivityReflectionStore = FileActivityReflectionStore(), cloud: ActivityReflectionStore = CloudActivityReflectionStore()) {
+        self.local = local
+        self.cloud = cloud
+    }
+    func load() -> [ActivityReflection] {
+        let merged = mergeSyncedArray(local: local.load(), remote: cloud.load(), id: \.id, updatedAt: \.updatedAt, isDeleted: \.isDeleted)
+        local.save(merged)
+        return merged
+    }
+    func save(_ items: [ActivityReflection]) {
+        local.save(items)
+        cloud.save(items)
+    }
+}
+
+struct SyncingWeeklyReflectionStore: WeeklyReflectionStore {
+    private let local: WeeklyReflectionStore
+    private let cloud: WeeklyReflectionStore
+    init(local: WeeklyReflectionStore = FileWeeklyReflectionStore(), cloud: WeeklyReflectionStore = CloudWeeklyReflectionStore()) {
+        self.local = local
+        self.cloud = cloud
+    }
+    func load() -> [WeeklyReflection] {
+        let merged = mergeSyncedArray(local: local.load(), remote: cloud.load(), id: \.id, updatedAt: \.updatedAt, isDeleted: \.isDeleted)
+        local.save(merged)
+        return merged
+    }
+    func save(_ items: [WeeklyReflection]) {
+        local.save(items)
+        cloud.save(items)
+    }
+}
+
+struct SyncingPhysicalIssueStore: PhysicalIssueStore {
+    private let local: PhysicalIssueStore
+    private let cloud: PhysicalIssueStore
+    init(local: PhysicalIssueStore = FilePhysicalIssueStore(), cloud: PhysicalIssueStore = CloudPhysicalIssueStore()) {
+        self.local = local
+        self.cloud = cloud
+    }
+    func load() -> [PhysicalIssue] {
+        let merged = mergeSyncedArray(local: local.load(), remote: cloud.load(), id: \.id, updatedAt: \.updatedAt, isDeleted: \.isDeleted)
+        local.save(merged)
+        return merged
+    }
+    func save(_ items: [PhysicalIssue]) {
+        local.save(items)
+        cloud.save(items)
+    }
+}
+
+struct SyncingActivityIssueReportStore: ActivityIssueReportStore {
+    private let local: ActivityIssueReportStore
+    private let cloud: ActivityIssueReportStore
+    init(local: ActivityIssueReportStore = FileActivityIssueReportStore(), cloud: ActivityIssueReportStore = CloudActivityIssueReportStore()) {
+        self.local = local
+        self.cloud = cloud
+    }
+    func load() -> [ActivityIssueReport] {
+        let merged = mergeSyncedArray(local: local.load(), remote: cloud.load(), id: \.id, updatedAt: \.updatedAt, isDeleted: \.isDeleted)
+        local.save(merged)
+        return merged
+    }
+    func save(_ items: [ActivityIssueReport]) {
+        local.save(items)
+        cloud.save(items)
+    }
+}
+
+struct SyncingWeeklyIssueReviewStore: WeeklyIssueReviewStore {
+    private let local: WeeklyIssueReviewStore
+    private let cloud: WeeklyIssueReviewStore
+    init(local: WeeklyIssueReviewStore = FileWeeklyIssueReviewStore(), cloud: WeeklyIssueReviewStore = CloudWeeklyIssueReviewStore()) {
+        self.local = local
+        self.cloud = cloud
+    }
+    func load() -> [WeeklyIssueReview] {
+        let merged = mergeSyncedArray(local: local.load(), remote: cloud.load(), id: \.id, updatedAt: \.updatedAt, isDeleted: \.isDeleted)
+        local.save(merged)
+        return merged
+    }
+    func save(_ items: [WeeklyIssueReview]) {
+        local.save(items)
+        cloud.save(items)
+    }
+}

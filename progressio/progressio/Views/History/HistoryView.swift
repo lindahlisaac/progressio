@@ -3,6 +3,12 @@ import SwiftUI
 struct HistoryView: View {
     @ObservedObject var weekViewModel: WeekPlannerViewModel
     @State private var entries: [WeekPlannerViewModel.HistoryEntry] = []
+    @State private var reflectionWorkoutID: UUID?
+
+    private var reflectionWorkout: Workout? {
+        guard let id = reflectionWorkoutID else { return nil }
+        return entries.first { $0.workout.id == id }?.workout
+    }
 
     var body: some View {
         List {
@@ -17,13 +23,25 @@ struct HistoryView: View {
                     NavigationLink {
                         historyDetail(for: entry)
                     } label: {
-                        HistoryRow(entry: entry)
+                        HistoryRow(
+                            entry: entry,
+                            reflection: weekViewModel.activityReflection(for: entry.workout.id)
+                        )
                     }
                 }
             }
         }
         .navigationTitle("History")
         .onAppear { reload() }
+        .sheet(item: Binding(
+            get: { reflectionWorkout.map { HistoryIdentifiedWorkout(workout: $0) } },
+            set: { reflectionWorkoutID = $0?.id }
+        )) { item in
+            ActivityReflectionSheet(viewModel: weekViewModel, workout: item.workout) {
+                reflectionWorkoutID = nil
+                reload()
+            }
+        }
     }
 
     private func reload() {
@@ -64,6 +82,7 @@ struct HistoryView: View {
                         w.touchUpdatedAt()
                     }
                     reload()
+                    reflectionWorkoutID = workout.id
                 },
                 onUnlockStatus: {
                     weekViewModel.mutateWorkout(weekStart: entry.weekStart, workoutID: workout.id) { w in
@@ -91,6 +110,7 @@ struct HistoryView: View {
             RunDetailView(
                 workout: workout,
                 onSave: { title, activityType, category, plannedDistance, plannedDuration, plannedElevation, status, actualDistance, actualDuration, actualElevation, timePeriod, notes in
+                    let wasComplete = workout.status == .completed || workout.status == .partiallyCompleted
                     weekViewModel.mutateWorkout(weekStart: entry.weekStart, workoutID: workout.id) { w in
                         WorkoutEditing.applyEnduranceSave(
                             to: &w,
@@ -109,12 +129,16 @@ struct HistoryView: View {
                         )
                     }
                     reload()
+                    if status == .completed, !wasComplete {
+                        reflectionWorkoutID = workout.id
+                    }
                 }
             )
         } else {
             RideDetailView(
                 workout: workout,
                 onSave: { title, category, plannedDistance, plannedDuration, plannedElevation, status, actualDistance, actualDuration, actualElevation, timePeriod, notes in
+                    let wasComplete = workout.status == .completed || workout.status == .partiallyCompleted
                     weekViewModel.mutateWorkout(weekStart: entry.weekStart, workoutID: workout.id) { w in
                         WorkoutEditing.applyEnduranceSave(
                             to: &w,
@@ -132,14 +156,23 @@ struct HistoryView: View {
                         )
                     }
                     reload()
+                    if status == .completed, !wasComplete {
+                        reflectionWorkoutID = workout.id
+                    }
                 }
             )
         }
     }
 }
 
+private struct HistoryIdentifiedWorkout: Identifiable {
+    let workout: Workout
+    var id: UUID { workout.id }
+}
+
 private struct HistoryRow: View {
     let entry: WeekPlannerViewModel.HistoryEntry
+    var reflection: ActivityReflection?
 
     private var summary: String {
         let workout = entry.workout
@@ -171,6 +204,11 @@ private struct HistoryRow: View {
                 Text(dateLabel)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if let reflection {
+                    Text("\(reflection.feel.label) · sRPE \(reflection.sessionRPE)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {

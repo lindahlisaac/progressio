@@ -15,6 +15,7 @@ enum WeekExportSummary {
         let title: String
         let status: String
         let detail: String
+        let reflectionLine: String?
         let isSkipped: Bool
     }
 
@@ -23,31 +24,44 @@ enum WeekExportSummary {
         let subtitle: String?
         let totals: [WeekModalityTotal]
         let elevationLines: [String]
+        let weeklyReflectionLines: [String]
         let days: [DaySection]
         let plainText: String
+        let isWeekComplete: Bool
     }
 
     static func make(
         from week: WeekPlan,
         calendar: Calendar = .current,
-        periodizedWeekName: String? = nil
+        periodizedWeekName: String? = nil,
+        activityReflections: [ActivityReflection] = [],
+        weeklyReflection: WeeklyReflection? = nil,
+        physicalIssues: [PhysicalIssue] = []
     ) -> Snapshot {
         let rangeTitle = weekRangeTitle(for: week, calendar: calendar)
         let totals = WeekTotals.modalityTotals(for: week)
         let elevationLines = elevationSummaryLines(for: week)
+        let reflectionByWorkout = Dictionary(
+            uniqueKeysWithValues: activityReflections.map { ($0.workoutID, $0) }
+        )
         let days = week.days.map { day -> DaySection in
             DaySection(
                 id: day.date,
                 title: dayTitle(for: day.date),
-                workouts: day.activeWorkouts.map(workoutLine(from:))
+                workouts: day.activeWorkouts.map { workout in
+                    workoutLine(from: workout, reflection: reflectionByWorkout[workout.id])
+                }
             )
         }
+        let weeklyLines = weeklyReflectionLines(from: weeklyReflection, issues: physicalIssues)
 
         let plainText = buildPlainText(
             rangeTitle: rangeTitle,
             subtitle: periodizedWeekName,
             totals: totals,
             elevationLines: elevationLines,
+            weeklyReflectionLines: weeklyLines,
+            isWeekComplete: week.isWeekComplete,
             days: days
         )
 
@@ -56,21 +70,34 @@ enum WeekExportSummary {
             subtitle: periodizedWeekName.flatMap { $0.isEmpty ? nil : $0 },
             totals: totals,
             elevationLines: elevationLines,
+            weeklyReflectionLines: weeklyLines,
             days: days,
-            plainText: plainText
+            plainText: plainText,
+            isWeekComplete: week.isWeekComplete
         )
     }
 
     // MARK: - Lines
 
-    private static func workoutLine(from workout: Workout) -> WorkoutLine {
-        WorkoutLine(
+    private static func workoutLine(from workout: Workout, reflection: ActivityReflection?) -> WorkoutLine {
+        let reflectionText: String?
+        if let reflection {
+            var parts = ["Feel \(reflection.feel.label)", "sRPE \(reflection.sessionRPE)"]
+            if let notes = reflection.performanceNotes, !notes.isEmpty {
+                parts.append(notes)
+            }
+            reflectionText = parts.joined(separator: " · ")
+        } else {
+            reflectionText = nil
+        }
+        return WorkoutLine(
             id: workout.id,
             timePeriod: workout.timePeriod.rawValue,
             activityType: workout.activityType.rawValue,
             title: workout.title,
             status: workout.status.badgeLabel,
             detail: detailLine(for: workout),
+            reflectionLine: reflectionText,
             isSkipped: workout.status == .skipped
         )
     }
@@ -186,17 +213,49 @@ enum WeekExportSummary {
 
     // MARK: - Plain text
 
+    private static func weeklyReflectionLines(
+        from reflection: WeeklyReflection?,
+        issues: [PhysicalIssue]
+    ) -> [String] {
+        guard let reflection else { return [] }
+        var lines = [
+            "Week rating: \(reflection.weekRating)/10",
+            "Fatigue: \(reflection.fatigue.label)",
+            "Recovery: \(reflection.recovery.label)",
+            "Sleep: \(reflection.sleepQuality.label)",
+            "Motivation: \(reflection.motivation.label)",
+            "Mood: \(reflection.mood.label)",
+            "Life stress: \(reflection.lifeStress.label)"
+        ]
+        if let well = reflection.whatWentWell, !well.isEmpty {
+            lines.append("Went well: \(well)")
+        }
+        if let next = reflection.nextWeekChanges, !next.isEmpty {
+            lines.append("Next week: \(next)")
+        }
+        let active = issues.filter { $0.status == .active && !$0.isDeleted }
+        if !active.isEmpty {
+            lines.append("Active issues: " + active.map(\.displayName).joined(separator: ", "))
+        }
+        return lines
+    }
+
     private static func buildPlainText(
         rangeTitle: String,
         subtitle: String?,
         totals: [WeekModalityTotal],
         elevationLines: [String],
+        weeklyReflectionLines: [String],
+        isWeekComplete: Bool,
         days: [DaySection]
     ) -> String {
         var lines: [String] = []
         lines.append(rangeTitle)
         if let subtitle, !subtitle.isEmpty {
             lines.append(subtitle)
+        }
+        if isWeekComplete {
+            lines.append("Status: Week complete")
         }
         lines.append("")
         lines.append("WEEKLY TOTALS")
@@ -210,6 +269,11 @@ enum WeekExportSummary {
                 lines.append(elev)
             }
         }
+        if !weeklyReflectionLines.isEmpty {
+            lines.append("")
+            lines.append("WEEKLY REFLECTION")
+            lines.append(contentsOf: weeklyReflectionLines)
+        }
         lines.append("")
 
         for day in days {
@@ -221,6 +285,9 @@ enum WeekExportSummary {
                     lines.append("  \(workout.timePeriod) · \(workout.activityType) · \(workout.title) · \(workout.status)")
                     if !workout.detail.isEmpty {
                         lines.append("    \(workout.detail)")
+                    }
+                    if let reflection = workout.reflectionLine {
+                        lines.append("    Reflection: \(reflection)")
                     }
                 }
             }

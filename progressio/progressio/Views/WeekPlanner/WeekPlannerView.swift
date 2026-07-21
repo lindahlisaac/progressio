@@ -24,6 +24,15 @@ struct WeekPlannerView: View {
     @State private var selectedPeriodizedBlock: PeriodizedBlockTemplate?
     @State private var showingApplyPeriodizedAlert = false
     @State private var showingWeekExport = false
+    @State private var reflectionWorkoutID: UUID?
+    @State private var showingWeeklyReflection = false
+    @State private var showingWeekCloseValidation = false
+    @State private var showingSkipUnresolvedConfirm = false
+
+    private var reflectionWorkout: Workout? {
+        guard let id = reflectionWorkoutID else { return nil }
+        return viewModel.weekPlan.days.flatMap(\.activeWorkouts).first { $0.id == id }
+    }
 
     private var plannerNavigationTitle: String {
         if let name = viewModel.weekPlan.appliedPeriodizedWeekName, !name.isEmpty {
@@ -37,64 +46,10 @@ struct WeekPlannerView: View {
             unattachedRunsSection
             weeklyTotalsSection
             daysSection
+            weekCloseSection
         }
         .navigationTitle(plannerNavigationTitle)
-        .toolbar {
-            ToolbarItemGroup(placement: .navigationBarLeading) {
-                Button {
-                    viewModel.goToPreviousWeek(templates: templatesViewModel.activeTemplates)
-                } label: {
-                    Image(systemName: "chevron.left")
-                }
-                .accessibilityLabel("Previous week")
-            }
-            ToolbarItemGroup(placement: .navigationBarTrailing) {
-                Menu {
-                    Section("Templates") {
-                        Button {
-                            showingWeeklyTemplatePicker = true
-                        } label: {
-                            Label("Apply Weekly Template", systemImage: "rectangle.stack.badge.plus")
-                        }
-                        .disabled(viewModel.activeWeeklyTemplates.isEmpty)
-
-                        Button {
-                            showingPeriodizedBlockPicker = true
-                        } label: {
-                            Label("Apply Periodized Block", systemImage: "calendar.badge.clock")
-                        }
-                        .disabled(viewModel.activePeriodizedBlocks.isEmpty)
-
-                        Button {
-                            saveTemplateName = ""
-                            saveTemplateNote = ""
-                            showingSaveWeekAsTemplate = true
-                        } label: {
-                            Label("Save Week as Template", systemImage: "square.and.arrow.down")
-                        }
-                        .disabled(!viewModel.hasWorkoutsInCurrentWeek())
-                    }
-
-                    Section {
-                        Button {
-                            showingWeekExport = true
-                        } label: {
-                            Label("Export Week Summary", systemImage: "square.and.arrow.up")
-                        }
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                }
-                .accessibilityLabel("Week options")
-
-                Button {
-                    viewModel.goToNextWeek(templates: templatesViewModel.activeTemplates)
-                } label: {
-                    Image(systemName: "chevron.right")
-                }
-                .accessibilityLabel("Next week")
-            }
-        }
+        .toolbar { plannerToolbarContent }
         .onAppear {
             viewModel.dedupeUnattachedRuns()
         }
@@ -104,250 +59,98 @@ struct WeekPlannerView: View {
             }
             previousUnattachedCount = newCount
         }
-        .sheet(item: $templatePickerContext) { context in
-            modalityTemplatePickerSheet(for: context)
+        .modifier(WeekPlannerReflectionPresentations(
+            viewModel: viewModel,
+            templatePickerContext: $templatePickerContext,
+            showingUnattachedSheet: $showingUnattachedSheet,
+            showingWeekExport: $showingWeekExport,
+            reflectionWorkoutID: $reflectionWorkoutID,
+            showingWeeklyReflection: $showingWeeklyReflection,
+            showingWeekCloseValidation: $showingWeekCloseValidation,
+            showingSkipUnresolvedConfirm: $showingSkipUnresolvedConfirm,
+            reflectionWorkout: reflectionWorkout,
+            modalityTemplatePicker: { context in AnyView(modalityTemplatePickerSheet(for: context)) }
+        ))
+        .modifier(WeekPlannerTemplatePresentations(
+            viewModel: viewModel,
+            showingWeeklyTemplatePicker: $showingWeeklyTemplatePicker,
+            showingPeriodizedBlockPicker: $showingPeriodizedBlockPicker,
+            showingSaveWeekAsTemplate: $showingSaveWeekAsTemplate,
+            saveTemplateName: $saveTemplateName,
+            saveTemplateNote: $saveTemplateNote,
+            selectedWeeklyTemplate: $selectedWeeklyTemplate,
+            selectedPeriodizedBlock: $selectedPeriodizedBlock,
+            showingApplyTemplateAlert: $showingApplyTemplateAlert,
+            showingApplyPeriodizedAlert: $showingApplyPeriodizedAlert,
+            showingSkipSheet: $showingSkipSheet,
+            skipNote: $skipNote,
+            skipSessionID: $skipSessionID,
+            showingMoveConfirm: $showingMoveConfirm,
+            pendingMoveWorkoutID: $pendingMoveWorkoutID,
+            pendingMoveDate: $pendingMoveDate,
+            showingPasteModeAlert: $showingPasteModeAlert,
+            pasteTargetDate: $pasteTargetDate
+        ))
+    }
+
+    @ToolbarContentBuilder
+    private var plannerToolbarContent: some ToolbarContent {
+        ToolbarItemGroup(placement: .navigationBarLeading) {
+            Button {
+                viewModel.goToPreviousWeek(templates: templatesViewModel.activeTemplates)
+            } label: {
+                Image(systemName: "chevron.left")
+            }
+            .accessibilityLabel("Previous week")
         }
-        .sheet(isPresented: $showingUnattachedSheet) {
-            NavigationStack {
-                UnattachedRunsView(
-                    runs: viewModel.activeUnattachedRuns,
-                    days: viewModel.weekPlan.days,
-                    onAttach: { date, run, workoutID in
-                        viewModel.attachActualRun(to: date, run: run, toWorkoutID: workoutID)
-                        viewModel.removeUnattachedRun(id: run.id)
+        ToolbarItemGroup(placement: .navigationBarTrailing) {
+            Menu {
+                Section("Templates") {
+                    Button {
+                        showingWeeklyTemplatePicker = true
+                    } label: {
+                        Label("Apply Weekly Template", systemImage: "rectangle.stack.badge.plus")
                     }
-                )
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Close") { showingUnattachedSheet = false }
-                        }
+                    .disabled(viewModel.activeWeeklyTemplates.isEmpty)
+
+                    Button {
+                        showingPeriodizedBlockPicker = true
+                    } label: {
+                        Label("Apply Periodized Block", systemImage: "calendar.badge.clock")
                     }
-            }
-        }
-        .sheet(isPresented: $showingWeekExport) {
-            WeekExportSummaryView(
-                weekPlan: viewModel.weekPlan,
-                periodizedWeekName: viewModel.weekPlan.appliedPeriodizedWeekName
-            )
-        }
-        .sheet(isPresented: $showingWeeklyTemplatePicker) {
-            NavigationStack {
-                List {
-                    ForEach(viewModel.activeWeeklyTemplates) { template in
-                        Button {
-                            selectedWeeklyTemplate = template
-                            showingWeeklyTemplatePicker = false
-                            showingApplyTemplateAlert = true
-                        } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(template.name)
-                                    .font(.body.weight(.semibold))
-                                    .foregroundColor(.primary)
-                                if let note = template.note, !note.isEmpty {
-                                    Text(note)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Text("\(template.days.flatMap { $0.workoutEntries }.count) workouts")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
+                    .disabled(viewModel.activePeriodizedBlocks.isEmpty)
+
+                    Button {
+                        saveTemplateName = ""
+                        saveTemplateNote = ""
+                        showingSaveWeekAsTemplate = true
+                    } label: {
+                        Label("Save Week as Template", systemImage: "square.and.arrow.down")
+                    }
+                    .disabled(!viewModel.hasWorkoutsInCurrentWeek())
+                }
+
+                Section {
+                    Button {
+                        showingWeekExport = true
+                    } label: {
+                        Label("Export Week Summary", systemImage: "square.and.arrow.up")
                     }
                 }
-                .navigationTitle("Apply Weekly Template")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") {
-                            showingWeeklyTemplatePicker = false
-                        }
-                    }
-                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
             }
-        }
-        .sheet(isPresented: $showingPeriodizedBlockPicker) {
-            NavigationStack {
-                List {
-                    ForEach(viewModel.activePeriodizedBlocks) { block in
-                        Button {
-                            selectedPeriodizedBlock = block
-                            showingPeriodizedBlockPicker = false
-                            showingApplyPeriodizedAlert = true
-                        } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(block.name)
-                                    .font(.body.weight(.semibold))
-                                    .foregroundColor(.primary)
-                                Text("\(block.weekCount) weeks · \(block.weeks.map(\.displayName).joined(separator: " → "))")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                            }
-                        }
-                    }
-                }
-                .navigationTitle("Apply Periodized Block")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { showingPeriodizedBlockPicker = false }
-                    }
-                }
+            .accessibilityLabel("Week options")
+
+            Button {
+                viewModel.goToNextWeek(templates: templatesViewModel.activeTemplates)
+            } label: {
+                Image(systemName: "chevron.right")
             }
-        }
-        .sheet(isPresented: $showingSaveWeekAsTemplate) {
-            NavigationStack {
-                Form {
-                    Section("Template Info") {
-                        TextField("Name", text: $saveTemplateName)
-                        TextField("Note (optional)", text: $saveTemplateNote, axis: .vertical)
-                            .lineLimit(3, reservesSpace: true)
-                    }
-                    Section {
-                        Text("Saves a snapshot of the currently viewed week. Later edits to the week will not change this template.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .navigationTitle("Save Week as Template")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") {
-                            showingSaveWeekAsTemplate = false
-                        }
-                    }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Save") {
-                            let name = saveTemplateName.trimmingCharacters(in: .whitespacesAndNewlines)
-                            guard !name.isEmpty else { return }
-                            let note = saveTemplateNote.trimmingCharacters(in: .whitespacesAndNewlines)
-                            viewModel.saveWeeklyTemplate(
-                                name: name,
-                                note: note.isEmpty ? nil : note
-                            )
-                            showingSaveWeekAsTemplate = false
-                        }
-                        .disabled(saveTemplateName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
-                }
-            }
-        }
-        .sheet(isPresented: $showingSkipSheet) {
-            NavigationStack {
-                Form {
-                    Section("Skip note (optional)") {
-                        TextEditor(text: $skipNote)
-                            .frame(minHeight: 120)
-                    }
-                }
-                .navigationTitle("Skip session")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") {
-                            showingSkipSheet = false
-                            skipSessionID = nil
-                            skipNote = ""
-                        }
-                    }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Skip") {
-                            if let id = skipSessionID {
-                                viewModel.setWorkoutStatus(workoutID: id, status: .skipped, note: skipNote)
-                            }
-                            showingSkipSheet = false
-                            skipSessionID = nil
-                            skipNote = ""
-                        }
-                    }
-                }
-            }
-        }
-        .alert("Apply Template to Current Week?", isPresented: $showingApplyTemplateAlert, presenting: selectedWeeklyTemplate) { template in
-            if viewModel.hasWorkoutsInCurrentWeek() {
-                Button("Override existing") {
-                    viewModel.applyWeeklyTemplate(template, to: viewModel.currentStartOfWeek, keepExisting: false)
-                }
-                Button("Keep existing") {
-                    viewModel.applyWeeklyTemplate(template, to: viewModel.currentStartOfWeek, keepExisting: true)
-                }
-                Button("Cancel", role: .cancel) { }
-            } else {
-                Button("Apply") {
-                    viewModel.applyWeeklyTemplate(template, to: viewModel.currentStartOfWeek, keepExisting: false)
-                }
-                Button("Cancel", role: .cancel) { }
-            }
-        } message: { template in
-            if viewModel.hasWorkoutsInCurrentWeek() {
-                Text("You have existing workouts this week. Choose to override them or keep them alongside '\(template.name)'.")
-            } else {
-                Text("This will apply '\(template.name)' to the current week.")
-            }
-        }
-        .alert("Apply Periodized Block?", isPresented: $showingApplyPeriodizedAlert, presenting: selectedPeriodizedBlock) { block in
-            let hasConflicts = viewModel.periodizedBlockRangeHasWorkouts(
-                startingAt: viewModel.currentStartOfWeek,
-                weekCount: block.weekCount
-            )
-            if hasConflicts {
-                Button("Merge") {
-                    viewModel.applyPeriodizedBlock(block, startingAt: viewModel.currentStartOfWeek, keepExisting: true)
-                }
-                Button("Overwrite", role: .destructive) {
-                    viewModel.applyPeriodizedBlock(block, startingAt: viewModel.currentStartOfWeek, keepExisting: false)
-                }
-                Button("Cancel", role: .cancel) {}
-            } else {
-                Button("Apply") {
-                    viewModel.applyPeriodizedBlock(block, startingAt: viewModel.currentStartOfWeek, keepExisting: true)
-                }
-                Button("Cancel", role: .cancel) {}
-            }
-        } message: { block in
-            let hasConflicts = viewModel.periodizedBlockRangeHasWorkouts(
-                startingAt: viewModel.currentStartOfWeek,
-                weekCount: block.weekCount
-            )
-            if hasConflicts {
-                Text("“\(block.name)” spans \(block.weekCount) weeks from this Plan week. Existing workouts found — Merge keeps them, Overwrite replaces them.")
-            } else {
-                Text("Apply “\(block.name)” (\(block.weekCount) weeks) starting from this Plan week?")
-            }
-        }
-        .alert("Move workout?", isPresented: $showingMoveConfirm) {
-            Button("Move") {
-                if let id = pendingMoveWorkoutID, let date = pendingMoveDate {
-                    _ = viewModel.moveWorkout(workoutID: id, toDate: date)
-                }
-                pendingMoveWorkoutID = nil
-                pendingMoveDate = nil
-            }
-            Button("Cancel", role: .cancel) {
-                pendingMoveWorkoutID = nil
-                pendingMoveDate = nil
-            }
-        } message: {
-            Text("This workout has completed or HealthKit data. Move it to the new day?")
-        }
-        .alert("Paste workout", isPresented: $showingPasteModeAlert) {
-            Button("Planned only") {
-                if let date = pasteTargetDate {
-                    viewModel.pasteWorkout(on: date, mode: .plannedOnly)
-                }
-                pasteTargetDate = nil
-            }
-            Button("Planned + completed") {
-                if let date = pasteTargetDate {
-                    viewModel.pasteWorkout(on: date, mode: .plannedAndCompleted)
-                }
-                pasteTargetDate = nil
-            }
-            Button("Cancel", role: .cancel) {
-                pasteTargetDate = nil
-            }
-        } message: {
-            Text("Include completed values from the copied workout?")
+            .accessibilityLabel("Next week")
         }
     }
+
 
     private var unattachedRunsSection: some View {
         Group {
@@ -357,8 +160,9 @@ struct WeekPlannerView: View {
                         runs: viewModel.activeUnattachedRuns,
                         days: viewModel.weekPlan.days,
                         onAttach: { date, run, workoutID in
-                            viewModel.attachActualRun(to: date, run: run, toWorkoutID: workoutID)
-                            viewModel.removeUnattachedRun(id: run.id)
+                            if let completedID = viewModel.attachActualRun(to: date, run: run, toWorkoutID: workoutID) {
+                                requestActivityReflection(for: completedID)
+                            }
                         }
                     )
                 } label: {
@@ -436,6 +240,54 @@ struct WeekPlannerView: View {
         }
     }
 
+    private var weekCloseSection: some View {
+        Section {
+            if viewModel.weekPlan.isWeekComplete {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Week complete", systemImage: "checkmark.seal.fill")
+                        .foregroundStyle(.green)
+                    if let when = viewModel.weekPlan.weekCompletedAt {
+                        Text(dayFormatter.string(from: when))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let reflection = viewModel.weeklyReflection(for: viewModel.currentWeekKey) {
+                        Text("Rated \(reflection.weekRating)/10 · Fatigue \(reflection.fatigue.label)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Button("Reopen week") {
+                        viewModel.reopenWeek()
+                    }
+                }
+                .padding(.vertical, 4)
+            } else {
+                Button {
+                    beginWeekClose()
+                } label: {
+                    Text("Complete Week")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                }
+                .tint(.green)
+            }
+        }
+    }
+
+    private func beginWeekClose() {
+        let unresolved = viewModel.unresolvedWorkoutsForWeekClose()
+        if unresolved.isEmpty {
+            showingWeeklyReflection = true
+        } else {
+            showingWeekCloseValidation = true
+        }
+    }
+
+    private func requestActivityReflection(for workoutID: UUID) {
+        reflectionWorkoutID = workoutID
+    }
+
     @ViewBuilder
     private func daySection(for day: DayPlan) -> some View {
         Section(header: Text(dayHeader(for: day.date))) {
@@ -449,7 +301,11 @@ struct WeekPlannerView: View {
                     } label: {
                         WorkoutRow(
                             workout: workout,
-                            onToggle: { viewModel.toggleStatus(workoutID: workout.id) },
+                            onToggle: {
+                                if viewModel.toggleStatus(workoutID: workout.id) {
+                                    requestActivityReflection(for: workout.id)
+                                }
+                            },
                             onDelete: { viewModel.removeWorkout(dayID: day.id, workoutID: workout.id) },
                             onSkip: {
                                 skipSessionID = workout.id
@@ -556,6 +412,7 @@ struct WeekPlannerView: View {
                 },
                 onCompleteStatus: {
                     viewModel.setWorkoutStatus(workoutID: workout.id, status: .completed)
+                    requestActivityReflection(for: workout.id)
                 },
                 onUnlockStatus: {
                     viewModel.setWorkoutStatus(workoutID: workout.id, status: .planned)
@@ -571,6 +428,7 @@ struct WeekPlannerView: View {
             RunDetailView(
                 workout: workout,
                 onSave: { title, activityType, category, plannedDistance, plannedDuration, plannedElevation, status, actualDistance, actualDuration, actualElevation, timePeriod, notes in
+                    let wasComplete = workout.status == .completed || workout.status == .partiallyCompleted
                     viewModel.updateEnduranceWorkout(
                         workoutID: workout.id,
                         title: title,
@@ -586,12 +444,16 @@ struct WeekPlannerView: View {
                         activityType: activityType,
                         notes: notes
                     )
+                    if status == .completed, !wasComplete {
+                        requestActivityReflection(for: workout.id)
+                    }
                 }
             )
         } else {
             RideDetailView(
                 workout: workout,
                 onSave: { title, category, plannedDistance, plannedDuration, plannedElevation, status, actualDistance, actualDuration, actualElevation, timePeriod, notes in
+                    let wasComplete = workout.status == .completed || workout.status == .partiallyCompleted
                     viewModel.updateEnduranceWorkout(
                         workoutID: workout.id,
                         title: title,
@@ -606,6 +468,9 @@ struct WeekPlannerView: View {
                         timePeriod: timePeriod,
                         notes: notes
                     )
+                    if status == .completed, !wasComplete {
+                        requestActivityReflection(for: workout.id)
+                    }
                 }
             )
         }
@@ -711,13 +576,6 @@ struct WeekPlannerView: View {
         let short = shortDayFormatter.string(from: date)
         return "\(short) • \(dayString)"
     }
-}
-
-private struct TemplatePickerContext: Identifiable {
-    let id = UUID()
-    let date: Date
-    let activityType: ActivityType
-    let timePeriod: TimePeriod
 }
 
 private let dayFormatter: DateFormatter = {
