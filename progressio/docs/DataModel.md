@@ -162,6 +162,8 @@ Possible completed fields:
 - completedStrengthRoutineSnapshot optional
 - completedAt
 
+**Strength path (current):** planned and completed strength live only as snapshots on the `Workout` inside `WeekPlan`. Standalone `strengthlog-*.json` / `StrengthLogState` are migration/legacy decode only (Task 031).
+
 ## Workout Template
 
 A general reusable workout blueprint.

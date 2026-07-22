@@ -35,6 +35,8 @@ final class MigrationRunner {
     } catch {
       print("❌ Migration failed: \(error.localizedDescription)")
     }
+    // Best-effort cleanup of leftover files after v7 embed (Task 031). Safe to run every launch.
+    StrengthLogPersistence.sweepOrphanFiles(fileManager: fileManager)
   }
 
   func runMigrations() throws {

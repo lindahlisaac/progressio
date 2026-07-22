@@ -115,15 +115,15 @@ If any devices might still have leftover `strengthlog-*.json` after v7:
 
 ## Acceptance Criteria
 
-- [ ] App builds.
-- [ ] `StrengthLogView` never reads or writes `strengthlog-*.json`.
-- [ ] Mid-session edits still persist through `updateCompletedStrengthSnapshot` into the week plan and survive relaunch / force sync.
-- [ ] Completing a strength workout keeps planned snapshot intact and completed snapshot present.
-- [ ] Week export JSON includes embedded completed strength snapshots when present; no file fallback.
-- [ ] Week import still restores embedded snapshots without creating strength log files.
-- [ ] No production (non-Migration) call sites to `StrengthLogPersistence` remain (except possibly a documented one-shot orphan sweep).
-- [ ] `ImplementationNotes.md` + DataModel docs/puml updated to describe the single path.
-- [ ] Grep clean for accidental dual-path regressions in Views/ViewModels.
+- [x] App builds.
+- [x] `StrengthLogView` never reads or writes `strengthlog-*.json`.
+- [x] Mid-session edits still persist through `updateCompletedStrengthSnapshot` into the week plan and survive relaunch / force sync.
+- [x] Completing a strength workout keeps planned snapshot intact and completed snapshot present.
+- [x] Week export JSON includes embedded completed strength snapshots when present; no file fallback.
+- [x] Week import still restores embedded snapshots without creating strength log files.
+- [x] No production (non-Migration) call sites to `StrengthLogPersistence` remain (except possibly a documented one-shot orphan sweep).
+- [x] `ImplementationNotes.md` + DataModel docs/puml updated to describe the single path.
+- [x] Grep clean for accidental dual-path regressions in Views/ViewModels.
 
 ## Manual QA Checklist
 

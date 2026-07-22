@@ -117,6 +117,9 @@ struct ExerciseLog: Identifiable, Codable, Equatable {
     }
 }
 
+/// Legacy file-backed strength log shape (pre–Task 021).
+/// Kept for migration decode and `PlannedSession` bridges only — not a live store.
+/// Production strength data lives on `Workout` planned/completed snapshots.
 struct StrengthLogState: Codable {
     var sessionID: UUID
     var exercises: [ExerciseLog]
@@ -164,6 +167,8 @@ struct StrengthLogState: Codable {
     }
 }
 
+/// Pre-Task-004 session model. Decode-only for old week/template JSON (`sessions` key);
+/// encoders write `workouts` / `workoutEntries`. Not used as a live planner type.
 struct PlannedSession: Identifiable, Codable {
     let id: UUID
     var title: String
@@ -227,6 +232,7 @@ struct DayPlan: Identifiable, Codable {
         if let decodedWorkouts = try container.decodeIfPresent([Workout].self, forKey: .workouts) {
             workouts = decodedWorkouts
         } else {
+            // Legacy import path: old week JSON used `sessions: [PlannedSession]`.
             let sessions = try container.decode([PlannedSession].self, forKey: .sessions)
             workouts = sessions.map { LegacySessionMapper.workout(from: $0, plannedDate: decodedDate) }
         }
@@ -234,6 +240,7 @@ struct DayPlan: Identifiable, Codable {
         etag = try container.decodeIfPresent(String.self, forKey: .etag)
     }
 
+    /// Encodes `workouts` only (never re-emits legacy `sessions`).
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)

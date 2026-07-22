@@ -802,35 +802,22 @@ final class WeekPlannerViewModel: ObservableObject {
 
     func exportCurrentWeek() -> URL? {
         do {
-            var exportPlan = weekPlan
-            var strengthLogsIncluded = 0
-
-            for dayIdx in exportPlan.days.indices {
-                for workoutIdx in exportPlan.days[dayIdx].workouts.indices {
-                    let workout = exportPlan.days[dayIdx].workouts[workoutIdx]
-                    guard workout.activityType == .strength else { continue }
-                    // Prefer embedded snapshot; fall back to legacy file only if missing.
-                    if workout.completedValues.completedStrengthRoutineSnapshot != nil {
-                        strengthLogsIncluded += 1
-                        continue
-                    }
-                    let logURL = StrengthLogPersistence.strengthLogURL(for: workout.id)
-                    if let log = StrengthLogPersistence.load(from: logURL) {
-                        exportPlan.days[dayIdx].workouts[workoutIdx].completedValues.completedStrengthRoutineSnapshot =
-                            strengthSnapshot(from: log)
-                        strengthLogsIncluded += 1
-                    }
+            let strengthSnapshotsIncluded = weekPlan.days
+                .flatMap(\.workouts)
+                .filter {
+                    $0.activityType == .strength
+                        && $0.completedValues.completedStrengthRoutineSnapshot != nil
                 }
-            }
+                .count
 
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             encoder.outputFormatting = [.prettyPrinted]
-            let data = try encoder.encode(exportPlan)
+            let data = try encoder.encode(weekPlan)
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("weekplan-\(isoFormatter.string(from: currentStartOfWeek)).json")
             try data.write(to: url, options: .atomic)
             print("📤 Exported week to: \(url.path)")
-            print("   Strength snapshots included: \(strengthLogsIncluded)")
+            print("   Strength snapshots included: \(strengthSnapshotsIncluded)")
             return url
         } catch {
             print("❌ Failed to export week: \(error)")
@@ -858,60 +845,6 @@ final class WeekPlannerViewModel: ObservableObject {
         } catch {
             print("❌ Failed to import week: \(error)")
         }
-    }
-
-    private func strengthSnapshot(from log: StrengthLogState) -> StrengthRoutineSnapshot {
-        let exercises = log.exercises.enumerated().map { index, exercise in
-            StrengthExerciseSnapshot(
-                id: exercise.id,
-                name: exercise.name,
-                orderIndex: index,
-                targetSets: exercise.sets.enumerated().map { setIndex, set in
-                    StrengthSetSnapshot(
-                        id: set.id,
-                        setNumber: setIndex + 1,
-                        targetReps: Int(set.repHint.filter { $0.isNumber }),
-                        targetWeight: parseDouble(from: set.weight),
-                        repHint: set.repHint.isEmpty ? nil : set.repHint,
-                        actualReps: set.reps.isEmpty ? nil : set.reps,
-                        actualWeight: set.weight.isEmpty ? nil : set.weight
-                    )
-                },
-                exerciseRPE: exercise.rpe.isEmpty ? nil : exercise.rpe
-            )
-        }
-        return StrengthRoutineSnapshot(exercises: exercises)
-    }
-
-    private func strengthLogState(from snapshot: StrengthRoutineSnapshot, workout: Workout) -> StrengthLogState {
-        let exercises = snapshot.exercises.sorted { $0.orderIndex < $1.orderIndex }.map { exercise in
-            ExerciseLog(
-                id: exercise.id,
-                name: exercise.name,
-                sets: exercise.targetSets.map { set in
-                    SetLog(
-                        id: set.id,
-                        weight: set.actualWeight ?? (set.targetWeight.map { String(Int($0)) } ?? ""),
-                        reps: set.actualReps ?? "",
-                        repHint: set.repHint ?? set.targetReps.map(String.init) ?? ""
-                    )
-                },
-                rpe: exercise.exerciseRPE ?? ""
-            )
-        }
-        let isCompleted = workout.status == .completed || workout.status == .partiallyCompleted
-        return StrengthLogState(
-            sessionID: workout.id,
-            exercises: exercises,
-            isCompleted: isCompleted,
-            updatedAt: workout.completedValues.completedAt ?? workout.metadata.updatedAt
-        )
-    }
-
-    private func parseDouble(from string: String) -> Double? {
-        let filtered = string.filter { "0123456789.".contains($0) }
-        guard !filtered.isEmpty, let value = Double(filtered) else { return nil }
-        return value
     }
 
     func persistWeek(for start: Date? = nil) {

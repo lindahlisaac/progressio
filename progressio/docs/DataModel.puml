@@ -364,21 +364,22 @@ package "Reflections & physical issues" {
 ' ─────────────────────────────────────────────
 ' Local-only / legacy parallel model
 ' ─────────────────────────────────────────────
-package "Legacy / local-only (still in tree)" {
-  class StrengthLogState <<local>> {
+package "Legacy / migration-only (still in tree)" {
+  class StrengthLogState <<legacy>> {
     sessionID : UUID
     isCompleted : Bool
     exercises : [ExerciseLog]
-    + sync fields… (file only)
+    + sync fields… (file decode only)
   }
 
-  class ExerciseLog <<local>> {
+  class ExerciseLog {
     id : UUID
     name : String
     rpe : String
+    note : Also UI editing type for StrengthLogView
   }
 
-  class SetLog <<local>> {
+  class SetLog {
     id : UUID
     weight : String
     reps : String
@@ -404,15 +405,15 @@ package "Legacy / local-only (still in tree)" {
   PlannedSession o-- StrengthLogState
   PlannedSession o-- RunDetailData
   note bottom of StrengthLogState
-    Mid-session strength edits still
-    use strengthlog-{id}.json.
-    Completion also embeds into
-    Workout.completedValues snapshot.
+    Migration / legacy file shape only
+    (strengthlog-{id}.json). Live strength
+    data is Workout planned/completed
+    StrengthRoutineSnapshot (Task 031).
   end note
   note bottom of PlannedSession
     Pre-Task-004 session model.
-    Weekly templates migrate
-    PlannedSession → WeeklyTemplateWorkoutEntry.
+    Decode-only for old JSON imports;
+    encoders write workouts only.
   end note
 }
 

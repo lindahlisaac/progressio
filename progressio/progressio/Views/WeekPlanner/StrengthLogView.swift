@@ -52,21 +52,11 @@ struct StrengthLogView: View {
 
         let seededFromSnapshot = Self.seedExercises(from: workout)
         self.initialExercises = seededFromSnapshot
-
-        if seededFromSnapshot.isEmpty,
-           let loaded = StrengthLogPersistence.load(from: StrengthLogPersistence.strengthLogURL(for: workout.id)) {
-            _exercises = State(initialValue: loaded.exercises)
-            let completed = workout.status == .completed || workout.status == .partiallyCompleted ? loaded.isCompleted : false
-            _isCompleted = State(initialValue: completed)
-            _isLocked = State(initialValue: completed)
-            _note = State(initialValue: workout.notes ?? "")
-        } else {
-            _exercises = State(initialValue: seededFromSnapshot)
-            let completed = workout.status == .completed || workout.status == .partiallyCompleted
-            _isCompleted = State(initialValue: completed)
-            _isLocked = State(initialValue: completed)
-            _note = State(initialValue: workout.notes ?? "")
-        }
+        _exercises = State(initialValue: seededFromSnapshot)
+        let completed = workout.status == .completed || workout.status == .partiallyCompleted
+        _isCompleted = State(initialValue: completed)
+        _isLocked = State(initialValue: completed)
+        _note = State(initialValue: workout.notes ?? "")
         _title = State(initialValue: workout.title.isEmpty ? ActivityType.strength.defaultTitle : workout.title)
         _timePeriod = State(initialValue: workout.timePeriod)
     }

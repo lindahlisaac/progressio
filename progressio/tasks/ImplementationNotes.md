@@ -17,9 +17,9 @@ The domain model lives in a single file: `Models/Models.swift`. Business logic i
 - `WeekPlannerViewModel` — week navigation, sessions, templates apply, HealthKit import orchestration, export/import
 - `TemplateLibraryViewModel` — strength/run workout templates CRUD
 
-**Navigation** (`ContentView.swift`): three tabs — Week (planner), Templates, Settings. No History tab yet.
+**Navigation** (`ContentView.swift`): Plan → Templates → History → Settings.
 
-**Strength session logs** are stored separately as per-session JSON files in `Documents/` (`strengthlog-{sessionID}.json`). These are **not synced to CloudKit**.
+**Strength logging** lives on the week-plan `Workout`: planned and completed `StrengthRoutineSnapshot`s. Standalone `strengthlog-*.json` is migration-only (Task 031).
 
 ---
 
@@ -37,7 +37,7 @@ All models are `Codable` structs in `Models/Models.swift`.
 | `DayTemplate` | Day within weekly template | `id: UUID` | — | — |
 | `UnattachedRun` | Imported HealthKit run awaiting attach | `id: UUID` | `updatedAt` optional | `etag` optional |
 | `RunDetailData` | Planned or actual run/ride details | — | `updatedAt` optional | `etag` optional |
-| `StrengthLogState` | Completed strength log (file-backed) | `sessionID: UUID` | `updatedAt` optional | `etag` optional |
+| `StrengthLogState` | **Legacy** file-backed strength log (migration decode only) | `sessionID: UUID` | `updatedAt` optional | `etag` optional |
 
 **Not present** (required by target docs): `schemaVersion`, `createdAt`, `isDeleted`, `deletedAt`, unified `Workout` type, `plannedValues`/`completedValues` structs, `WorkoutSource`, `timePeriod` (AM/PM), separate endurance templates, periodized blocks, `ImportedHealthWorkoutReference`.
 
@@ -68,7 +68,7 @@ PlannedSession
 
 **Planned vs completed (runs/rides):** Partially correct. `runDetail` holds planned values; `actualRun` holds completed values. `RunDetailView` and `RideDetailView` edit them separately.
 
-**Planned vs completed (strength):** Split across two stores. Template targets live in `StrengthTemplate`; logged sets live in a **separate file** (`strengthlog-{id}.json`) via `StrengthLogView`. No explicit planned snapshot on the session.
+**Planned vs completed (strength):** *(superseded by Tasks 008/021/031)* Strength plan + log live on `Workout` snapshots inside `WeekPlan`. `strengthlog-*.json` is migration-only.
 
 **Gaps vs docs:**
 
@@ -177,8 +177,8 @@ PlannedSession
 
 **Not synced:**
 
-- Strength logs (`strengthlog-*.json` in Documents root, not under `progressio/`)
-- Core Data (`Persistence.swift` / `progressio.xcdatamodeld`) — unused boilerplate
+- Legacy `strengthlog-*.json` (migration-only leftovers; strength data syncs inside `WeekPlan`)
+- Core Data (`Persistence.swift` / `progressio.xcdatamodeld`) — unused boilerplate (removed in Task 027)
 
 **Sync gaps vs docs:**
 
@@ -508,7 +508,7 @@ For each completed task, record **what shipped** and a **Major decisions** subse
 
 - **Match dialog** — no Cancel; user must Apply or Create new (intentional for solo use). Easy later change: dismiss → decline.
 - **Settings import QA** — UUID imports land on Plan calendar (or match prompt), not Unattached. Unattached is for UUID-less / manual attach / detach. Verify via Plan/History, not only Unattached count.
-- **Week export/import** — export prefers embedded strength snapshots (legacy file fallback only if missing); import no longer writes `strengthlog-*.json`.
+- **Week export/import** — export/import use embedded strength snapshots only (no `strengthlog-*.json` fallback).
 - **History scope** — scans local `weekplan-*.json` only; CloudKit-only weeks appear after a local pull (expected v1).
 - **Strength mid-session** — writes `completedValues` while status may still be `.planned` (sync); History correctly excludes until completed/partial/imported.
 
@@ -516,7 +516,7 @@ For each completed task, record **what shipped** and a **Major decisions** subse
 
 - Last HealthKit import timestamp + iCloud last-sync status in Settings.
 - Duplicate import cleanup (confirmation; soft-delete UUID duplicates only).
-- Export prefers embedded strength snapshots; import no longer writes `strengthlog-*.json`.
+- Export/import use embedded strength snapshots only.
 - Import footer clarifies Plan/History vs Unattached.
 
 **Major decisions**
@@ -588,6 +588,13 @@ Next work is product polish / App Store submission QA per Task 027 checklist (ma
 - **Weekly issue list (v1)** — Weekly reflection still shows **all active** `PhysicalIssue`s globally (not limited to the current week). Acceptable for v1; tighten later if needed.
 - **Tests** — `ReflectionLogicTests` covers WeekKey, unresolved filter, one-reflection upsert/overwrite, report replace, resolve-via-weekly-review, and workout soft-delete cascade.
 
+### Task 031 — Single Strength Path on WeekPlan
+
+- **Source of truth** — planned: `Workout.plannedValues.plannedStrengthRoutineSnapshot`; in-progress/completed: `Workout.completedValues.completedStrengthRoutineSnapshot`.
+- **Removed dual path** — `StrengthLogView` and week export no longer read `strengthlog-*.json`.
+- **`StrengthLogPersistence`** — migration/legacy only; launch runs a safe orphan-file sweep (delete when snapshot exists or no matching workout).
+- **`ExerciseLog` / `SetLog`** — remain UI editing types for `StrengthLogView`; `StrengthLogState` / `PlannedSession` are decode bridges only.
+
 ---
 
 ## Source File Index
@@ -599,10 +606,11 @@ progressio/progressio/
 ├── ViewModels/WeekPlannerViewModel+Reflections.swift
 ├── Views/WeekPlanner/ActivityReflectionSheet.swift
 ├── Views/WeekPlanner/WeeklyReflectionSheet.swift
-└── … (stores, migration through v7)
+└── … (stores, migration through v7; strength files migration-only)
 progressio/progressioTests/ReflectionLogicTests.swift
+progressio/docs/DataModel.puml
 ```
 
 ---
 
-*Last updated: Task 030 Reflection Gaps from 029 Review.*
+*Last updated: Task 031 Single Strength Path on WeekPlan.*
