@@ -37,10 +37,10 @@ Read:
 
 ## Acceptance Criteria
 
-- [ ] History surfaces reflection details beyond a one-line feel chip.
-- [ ] Edit path shows the soft warning before mutation.
-- [ ] Cancel leaves reflection unchanged.
-- [ ] App builds.
+- [x] History surfaces reflection details beyond a one-line feel chip.
+- [x] Edit path shows the soft warning before mutation.
+- [x] Cancel leaves reflection unchanged.
+- [x] App builds.
 
 ## Manual QA Checklist
 

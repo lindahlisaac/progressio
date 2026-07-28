@@ -637,6 +637,12 @@ Next work is product polish / App Store submission QA per Task 027 checklist (ma
 - **Detail** — chronological activity reports (workout title when found) + weekly reviews; **Mark resolved** (optional note → `optionalNotes`) and **Reopen**.
 - Weekly reflection resolve path unchanged; hub is the longitudinal browse/resolve UI.
 
+### Task 038 — History Reflection View / Edit Warning
+
+- History entry opens a detail with full reflection fields (feel, sRPE, notes, updated) plus **Edit** / **Add**.
+- Editing an existing reflection shows a soft warning: amend only for objective mistakes; **Edit anyway** / **Cancel**.
+- Workout editor remains under **Open workout**.
+
 ---
 
 ## Source File Index
@@ -650,6 +656,7 @@ progressio/progressio/
 ├── Services/ReflectionFileStores.swift
 ├── ViewModels/WeekPlannerViewModel+Reflections.swift
 ├── Views/Settings/InjuryHubView.swift
+├── Views/History/HistoryView.swift
 ├── Views/WeekPlanner/ActivityReflectionSheet.swift
 ├── Views/WeekPlanner/SkipReflectionSheet.swift
 ├── Views/WeekPlanner/WeeklyReflectionSheet.swift
@@ -664,4 +671,4 @@ progressio/docs/DataModel.puml
 
 ---
 
-*Last updated: Task 037 Injury Hub.*
+*Last updated: Task 038 History Reflection Edit Warning.*

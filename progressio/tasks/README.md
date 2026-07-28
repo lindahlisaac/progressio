@@ -93,7 +93,7 @@ The original roadmap assumed a greenfield data model refactor. The audit found:
 | 035 | `035-StrengthSummaryAndExport.md` | **Complete** |
 | 036 | `036-ReflectionGatedCompletionAndSkip.md` | **Complete** |
 | 037 | `037-InjuryHub.md` | **Complete** |
-| 038 | `038-HistoryReflectionEditWarning.md` | Pending |
+| 038 | `038-HistoryReflectionEditWarning.md` | **Complete** |
 | 039 | `039-DayNotes.md` | Pending |
 | 040 | `040-TemplatePlannedMileage.md` | Pending |
 | 041 | `041-ReplaceWorkoutWithReason.md` | Pending |

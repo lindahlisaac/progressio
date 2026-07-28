@@ -7,6 +7,8 @@ struct ActivityReflectionSheet: View {
     let workout: Workout
     var onSaved: () -> Void
     var onCancelled: () -> Void
+    /// When false, Cancel dismisses without implying “skip reflection on complete.”
+    var isFirstCapture: Bool = true
 
     @State private var feel: SessionFeel = .ok
     @State private var sessionRPE: Int = 5
@@ -40,7 +42,9 @@ struct ActivityReflectionSheet: View {
                     Text(workout.activityType.rawValue)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("Optional — Skip to finish without logging a reflection.")
+                    Text(isFirstCapture
+                         ? "Optional — Skip to finish without logging a reflection."
+                         : "Amend only for objective mistakes (wrong tap, typo), not revised feelings.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -74,7 +78,7 @@ struct ActivityReflectionSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Skip") { onCancelled() }
+                    Button(isFirstCapture ? "Skip" : "Cancel") { onCancelled() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { attemptSave() }

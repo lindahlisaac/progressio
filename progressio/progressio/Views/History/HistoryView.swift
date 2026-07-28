@@ -3,12 +3,6 @@ import SwiftUI
 struct HistoryView: View {
     @ObservedObject var weekViewModel: WeekPlannerViewModel
     @State private var entries: [WeekPlannerViewModel.HistoryEntry] = []
-    @State private var reflectionWorkoutID: UUID?
-
-    private var reflectionWorkout: Workout? {
-        guard let id = reflectionWorkoutID else { return nil }
-        return entries.first { $0.workout.id == id }?.workout
-    }
 
     var body: some View {
         List {
@@ -21,7 +15,11 @@ struct HistoryView: View {
             } else {
                 ForEach(entries) { entry in
                     NavigationLink {
-                        historyDetail(for: entry)
+                        HistoryEntryDetailView(
+                            entry: entry,
+                            weekViewModel: weekViewModel,
+                            onReload: reload
+                        )
                     } label: {
                         HistoryRow(
                             entry: entry,
@@ -33,180 +31,295 @@ struct HistoryView: View {
         }
         .navigationTitle("History")
         .onAppear { reload() }
-        .sheet(item: Binding(
-            get: { reflectionWorkout.map { HistoryIdentifiedWorkout(workout: $0) } },
-            set: { reflectionWorkoutID = $0?.id }
-        )) { item in
-            ActivityReflectionSheet(
-                viewModel: weekViewModel,
-                workout: item.workout,
-                onSaved: {
-                    weekViewModel.finalizeComplete(workoutID: item.workout.id)
-                    reflectionWorkoutID = nil
-                    reload()
-                },
-                onCancelled: {
-                    reflectionWorkoutID = nil
-                    reload()
-                }
-            )
-        }
     }
 
     private func reload() {
         entries = weekViewModel.historyEntries()
     }
+}
+
+/// First-class reflection summary + link into the workout editor.
+private struct HistoryEntryDetailView: View {
+    let entry: WeekPlannerViewModel.HistoryEntry
+    @ObservedObject var weekViewModel: WeekPlannerViewModel
+    var onReload: () -> Void
+
+    @State private var showingEditWarning = false
+    @State private var showingReflectionSheet = false
+
+    private var reflection: ActivityReflection? {
+        weekViewModel.activityReflection(for: entry.workout.id)
+    }
+
+    private static let dateTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    var body: some View {
+        List {
+            Section {
+                LabeledContent("Workout", value: entry.workout.title)
+                LabeledContent("Type", value: entry.workout.activityType.rawValue)
+                LabeledContent("Status", value: entry.workout.status.badgeLabel)
+            }
+
+            Section("Reflection") {
+                if let reflection {
+                    reflectionDetails(reflection)
+                    Button("Edit reflection") {
+                        showingEditWarning = true
+                    }
+                } else {
+                    Text("No reflection logged for this session.")
+                        .foregroundStyle(.secondary)
+                    Button("Add reflection") {
+                        showingReflectionSheet = true
+                    }
+                }
+            }
+
+            Section {
+                NavigationLink("Open workout") {
+                    HistoryWorkoutDestination(
+                        entry: entry,
+                        weekViewModel: weekViewModel,
+                        onReload: onReload
+                    )
+                }
+            }
+        }
+        .navigationTitle(entry.workout.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear { onReload() }
+        .alert("Amend this reflection?", isPresented: $showingEditWarning) {
+            Button("Edit anyway") {
+                showingReflectionSheet = true
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Reflections capture how the session felt at completion. Amend only for objective mistakes (wrong tap, typo)—not because your assessment changed later.")
+        }
+        .sheet(isPresented: $showingReflectionSheet) {
+            ActivityReflectionSheet(
+                viewModel: weekViewModel,
+                workout: entry.workout,
+                onSaved: {
+                    if entry.workout.status != .completed && entry.workout.status != .partiallyCompleted {
+                        weekViewModel.finalizeComplete(workoutID: entry.workout.id)
+                    }
+                    showingReflectionSheet = false
+                    onReload()
+                },
+                onCancelled: {
+                    showingReflectionSheet = false
+                    onReload()
+                },
+                isFirstCapture: reflection == nil
+            )
+        }
+    }
 
     @ViewBuilder
-    private func historyDetail(for entry: WeekPlannerViewModel.HistoryEntry) -> some View {
-        let workout = entry.workout
-        if workout.activityType == .strength {
-            StrengthLogView(
-                workout: workout,
-                onNoteChange: { note in
-                    weekViewModel.mutateWorkout(weekStart: entry.weekStart, workoutID: workout.id) { w in
-                        let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
-                        w.notes = trimmed.isEmpty ? nil : trimmed
-                        w.touchUpdatedAt()
-                    }
-                    reload()
-                },
-                onTitleChange: { title in
-                    weekViewModel.mutateWorkout(weekStart: entry.weekStart, workoutID: workout.id) { w in
-                        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-                        w.title = trimmed.isEmpty ? ActivityType.strength.defaultTitle : trimmed
-                        w.touchUpdatedAt()
-                    }
-                    reload()
-                },
-                loadPriorComparison: { liftNames in
-                    weekViewModel.strengthComparison(for: workout, liftNames: liftNames)
-                },
-                onCompleteStatus: {
-                    weekViewModel.mutateWorkout(weekStart: entry.weekStart, workoutID: workout.id) { w in
-                        w.status = .completed
-                        if w.completedValues.completedAt == nil {
-                            w.completedValues.completedAt = Date()
-                        }
-                        w.touchUpdatedAt()
-                    }
-                    reload()
-                    reflectionWorkoutID = workout.id
-                },
-                onUnlockStatus: {
-                    weekViewModel.mutateWorkout(weekStart: entry.weekStart, workoutID: workout.id) { w in
-                        w.status = .planned
-                        w.touchUpdatedAt()
-                    }
-                    reload()
-                },
-                onCompletedSnapshotPersist: { snapshot in
-                    weekViewModel.mutateWorkout(weekStart: entry.weekStart, workoutID: workout.id) { w in
-                        w.completedValues.completedStrengthRoutineSnapshot = snapshot
-                        w.touchUpdatedAt()
-                    }
-                    reload()
-                },
-                onTimePeriodChange: { period in
-                    weekViewModel.mutateWorkout(weekStart: entry.weekStart, workoutID: workout.id) { w in
-                        w.timePeriod = period
-                        w.touchUpdatedAt()
-                    }
-                    reload()
-                }
-            )
-        } else if workout.activityType == .stairMaster {
-            StairMasterDetailView(
-                workout: workout,
-                onSave: { title, plannedDuration, plannedElevation, plannedLevel, status, actualDuration, actualElevation, actualLevel, timePeriod, notes in
-                    let wasComplete = workout.status == .completed || workout.status == .partiallyCompleted
-                    weekViewModel.mutateWorkout(weekStart: entry.weekStart, workoutID: workout.id) { w in
-                        WorkoutEditing.applyEnduranceSave(
-                            to: &w,
-                            title: title,
-                            runType: nil,
-                            plannedDistance: "",
-                            plannedDuration: plannedDuration,
-                            plannedElevation: plannedElevation,
-                            plannedLevel: plannedLevel,
-                            actualDistance: nil,
-                            actualDuration: actualDuration,
-                            actualElevation: actualElevation,
-                            actualLevel: actualLevel,
-                            status: status,
-                            timePeriod: timePeriod,
-                            activityType: .stairMaster,
-                            notes: notes
-                        )
-                    }
-                    reload()
-                    if status == .completed, !wasComplete {
-                        reflectionWorkoutID = workout.id
-                    }
-                }
-            )
-        } else if workout.activityType.sessionKind == .run {
-            RunDetailView(
-                workout: workout,
-                onSave: { title, activityType, category, plannedDistance, plannedDuration, plannedElevation, status, actualDistance, actualDuration, actualElevation, timePeriod, notes in
-                    let wasComplete = workout.status == .completed || workout.status == .partiallyCompleted
-                    weekViewModel.mutateWorkout(weekStart: entry.weekStart, workoutID: workout.id) { w in
-                        WorkoutEditing.applyEnduranceSave(
-                            to: &w,
-                            title: title,
-                            runType: category.flatMap(RunType.init(runCategory:)),
-                            plannedDistance: plannedDistance,
-                            plannedDuration: plannedDuration,
-                            plannedElevation: plannedElevation,
-                            actualDistance: actualDistance,
-                            actualDuration: actualDuration,
-                            actualElevation: actualElevation,
-                            status: status,
-                            timePeriod: timePeriod,
-                            activityType: activityType,
-                            notes: notes
-                        )
-                    }
-                    reload()
-                    if status == .completed, !wasComplete {
-                        reflectionWorkoutID = workout.id
-                    }
-                }
-            )
-        } else {
-            RideDetailView(
-                workout: workout,
-                onSave: { title, category, plannedDistance, plannedDuration, plannedElevation, status, actualDistance, actualDuration, actualElevation, timePeriod, notes in
-                    let wasComplete = workout.status == .completed || workout.status == .partiallyCompleted
-                    weekViewModel.mutateWorkout(weekStart: entry.weekStart, workoutID: workout.id) { w in
-                        WorkoutEditing.applyEnduranceSave(
-                            to: &w,
-                            title: title,
-                            runType: category.flatMap(RunType.init(runCategory:)),
-                            plannedDistance: plannedDistance,
-                            plannedDuration: plannedDuration,
-                            plannedElevation: plannedElevation,
-                            actualDistance: actualDistance,
-                            actualDuration: actualDuration,
-                            actualElevation: actualElevation,
-                            status: status,
-                            timePeriod: timePeriod,
-                            notes: notes
-                        )
-                    }
-                    reload()
-                    if status == .completed, !wasComplete {
-                        reflectionWorkoutID = workout.id
-                    }
-                }
-            )
+    private func reflectionDetails(_ reflection: ActivityReflection) -> some View {
+        switch reflection.reflectionKind {
+        case .standard:
+            if let feel = reflection.feel {
+                LabeledContent("Feel", value: feel.label)
+            }
+            if let rpe = reflection.sessionRPE {
+                LabeledContent("Session RPE", value: "\(rpe)")
+            }
+        case .skip:
+            LabeledContent("Kind", value: "Skip")
+        }
+        if let notes = reflection.performanceNotes, !notes.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Notes")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(notes)
+            }
+        }
+        if let updated = reflection.updatedAt {
+            LabeledContent("Updated", value: Self.dateTimeFormatter.string(from: updated))
+        } else if let created = reflection.createdAt {
+            LabeledContent("Logged", value: Self.dateTimeFormatter.string(from: created))
         }
     }
 }
 
-private struct HistoryIdentifiedWorkout: Identifiable {
-    let workout: Workout
-    var id: UUID { workout.id }
+/// Workout editor destination used from History (same mutations as before).
+private struct HistoryWorkoutDestination: View {
+    let entry: WeekPlannerViewModel.HistoryEntry
+    @ObservedObject var weekViewModel: WeekPlannerViewModel
+    var onReload: () -> Void
+
+    @State private var showingReflectionSheet = false
+
+    var body: some View {
+        let workout = entry.workout
+        Group {
+            if workout.activityType == .strength {
+                StrengthLogView(
+                    workout: workout,
+                    onNoteChange: { note in
+                        weekViewModel.mutateWorkout(weekStart: entry.weekStart, workoutID: workout.id) { w in
+                            let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
+                            w.notes = trimmed.isEmpty ? nil : trimmed
+                            w.touchUpdatedAt()
+                        }
+                        onReload()
+                    },
+                    onTitleChange: { title in
+                        weekViewModel.mutateWorkout(weekStart: entry.weekStart, workoutID: workout.id) { w in
+                            let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                            w.title = trimmed.isEmpty ? ActivityType.strength.defaultTitle : trimmed
+                            w.touchUpdatedAt()
+                        }
+                        onReload()
+                    },
+                    loadPriorComparison: { liftNames in
+                        weekViewModel.strengthComparison(for: workout, liftNames: liftNames)
+                    },
+                    onCompleteStatus: {
+                        weekViewModel.mutateWorkout(weekStart: entry.weekStart, workoutID: workout.id) { w in
+                            w.status = .completed
+                            if w.completedValues.completedAt == nil {
+                                w.completedValues.completedAt = Date()
+                            }
+                            w.touchUpdatedAt()
+                        }
+                        onReload()
+                        showingReflectionSheet = true
+                    },
+                    onUnlockStatus: {
+                        weekViewModel.mutateWorkout(weekStart: entry.weekStart, workoutID: workout.id) { w in
+                            w.status = .planned
+                            w.touchUpdatedAt()
+                        }
+                        onReload()
+                    },
+                    onCompletedSnapshotPersist: { snapshot in
+                        weekViewModel.mutateWorkout(weekStart: entry.weekStart, workoutID: workout.id) { w in
+                            w.completedValues.completedStrengthRoutineSnapshot = snapshot
+                            w.touchUpdatedAt()
+                        }
+                        onReload()
+                    },
+                    onTimePeriodChange: { period in
+                        weekViewModel.mutateWorkout(weekStart: entry.weekStart, workoutID: workout.id) { w in
+                            w.timePeriod = period
+                            w.touchUpdatedAt()
+                        }
+                        onReload()
+                    }
+                )
+            } else if workout.activityType == .stairMaster {
+                StairMasterDetailView(
+                    workout: workout,
+                    onSave: { title, plannedDuration, plannedElevation, plannedLevel, status, actualDuration, actualElevation, actualLevel, timePeriod, notes in
+                        let wasComplete = workout.status == .completed || workout.status == .partiallyCompleted
+                        weekViewModel.mutateWorkout(weekStart: entry.weekStart, workoutID: workout.id) { w in
+                            WorkoutEditing.applyEnduranceSave(
+                                to: &w,
+                                title: title,
+                                runType: nil,
+                                plannedDistance: "",
+                                plannedDuration: plannedDuration,
+                                plannedElevation: plannedElevation,
+                                plannedLevel: plannedLevel,
+                                actualDistance: nil,
+                                actualDuration: actualDuration,
+                                actualElevation: actualElevation,
+                                actualLevel: actualLevel,
+                                status: status,
+                                timePeriod: timePeriod,
+                                activityType: .stairMaster,
+                                notes: notes
+                            )
+                        }
+                        onReload()
+                        if status == .completed, !wasComplete {
+                            showingReflectionSheet = true
+                        }
+                    }
+                )
+            } else if workout.activityType.sessionKind == .run {
+                RunDetailView(
+                    workout: workout,
+                    onSave: { title, activityType, category, plannedDistance, plannedDuration, plannedElevation, status, actualDistance, actualDuration, actualElevation, timePeriod, notes in
+                        let wasComplete = workout.status == .completed || workout.status == .partiallyCompleted
+                        weekViewModel.mutateWorkout(weekStart: entry.weekStart, workoutID: workout.id) { w in
+                            WorkoutEditing.applyEnduranceSave(
+                                to: &w,
+                                title: title,
+                                runType: category.flatMap(RunType.init(runCategory:)),
+                                plannedDistance: plannedDistance,
+                                plannedDuration: plannedDuration,
+                                plannedElevation: plannedElevation,
+                                actualDistance: actualDistance,
+                                actualDuration: actualDuration,
+                                actualElevation: actualElevation,
+                                status: status,
+                                timePeriod: timePeriod,
+                                activityType: activityType,
+                                notes: notes
+                            )
+                        }
+                        onReload()
+                        if status == .completed, !wasComplete {
+                            showingReflectionSheet = true
+                        }
+                    }
+                )
+            } else {
+                RideDetailView(
+                    workout: workout,
+                    onSave: { title, category, plannedDistance, plannedDuration, plannedElevation, status, actualDistance, actualDuration, actualElevation, timePeriod, notes in
+                        let wasComplete = workout.status == .completed || workout.status == .partiallyCompleted
+                        weekViewModel.mutateWorkout(weekStart: entry.weekStart, workoutID: workout.id) { w in
+                            WorkoutEditing.applyEnduranceSave(
+                                to: &w,
+                                title: title,
+                                runType: category.flatMap(RunType.init(runCategory:)),
+                                plannedDistance: plannedDistance,
+                                plannedDuration: plannedDuration,
+                                plannedElevation: plannedElevation,
+                                actualDistance: actualDistance,
+                                actualDuration: actualDuration,
+                                actualElevation: actualElevation,
+                                status: status,
+                                timePeriod: timePeriod,
+                                notes: notes
+                            )
+                        }
+                        onReload()
+                        if status == .completed, !wasComplete {
+                            showingReflectionSheet = true
+                        }
+                    }
+                )
+            }
+        }
+        .sheet(isPresented: $showingReflectionSheet) {
+            ActivityReflectionSheet(
+                viewModel: weekViewModel,
+                workout: entry.workout,
+                onSaved: {
+                    showingReflectionSheet = false
+                    onReload()
+                },
+                onCancelled: {
+                    showingReflectionSheet = false
+                    onReload()
+                },
+                isFirstCapture: weekViewModel.activityReflection(for: entry.workout.id) == nil
+            )
+        }
+    }
 }
 
 private struct HistoryRow: View {
@@ -247,6 +360,10 @@ private struct HistoryRow: View {
                     Text(reflectionSubtitle(reflection))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
+                } else {
+                    Text("No reflection")
+                        .font(.caption2)
+                        .foregroundStyle(.quaternary)
                 }
             }
             Spacer()
