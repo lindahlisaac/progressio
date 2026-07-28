@@ -50,9 +50,17 @@ struct WeekPlannerReflectionPresentations: ViewModifier {
                 get: { reflectionWorkout.map { IdentifiedWorkout(workout: $0) } },
                 set: { reflectionWorkoutID = $0?.id }
             )) { item in
-                ActivityReflectionSheet(viewModel: viewModel, workout: item.workout) {
-                    reflectionWorkoutID = nil
-                }
+                ActivityReflectionSheet(
+                    viewModel: viewModel,
+                    workout: item.workout,
+                    onSaved: {
+                        viewModel.finalizeComplete(workoutID: item.workout.id)
+                        reflectionWorkoutID = nil
+                    },
+                    onCancelled: {
+                        reflectionWorkoutID = nil
+                    }
+                )
             }
             .sheet(isPresented: $showingWeeklyReflection) {
                 WeeklyReflectionSheet(viewModel: viewModel) {

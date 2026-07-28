@@ -267,7 +267,8 @@ final class WeekPlannerViewModel: ObservableObject {
         persistWeek()
     }
 
-    /// Toggles workout status. Returns `true` when the workout newly becomes `.completed`.
+    /// Toggles workout status. Returns `true` when the workout newly becomes `.completed`
+    /// (caller may optionally present a reflection sheet — reflections are optional).
     @discardableResult
     func toggleStatus(workoutID: UUID) -> Bool {
         var becameCompleted = false
@@ -506,7 +507,7 @@ final class WeekPlannerViewModel: ObservableObject {
     }
 
     /// Attaches an imported run to a planned workout (or creates an ad-hoc completed workout).
-    /// Returns the workout ID when status newly becomes `.completed` (for reflection sheet).
+    /// Returns the workout ID when status newly becomes `.completed` (optional reflection sheet).
     @discardableResult
     func attachActualRun(to day: Date, run: UnattachedRun, toWorkoutID: UUID? = nil) -> UUID? {
         guard let dayIndex = weekPlan.days.firstIndex(where: { calendar.isDate($0.date, inSameDayAs: day) }) else {
@@ -520,7 +521,7 @@ final class WeekPlannerViewModel: ObservableObject {
             let priorStatus = weekPlan.days[dayIndex].workouts[workoutIndex].status
             WorkoutEditing.applyAttachedRun(run.detail, to: &weekPlan.days[dayIndex].workouts[workoutIndex])
             linkedWorkoutID = targetID
-            if priorStatus != .completed {
+            if priorStatus != .completed && priorStatus != .partiallyCompleted {
                 newlyCompletedID = targetID
             }
         } else if let workoutIndex = weekPlan.days[dayIndex].workouts.firstIndex(where: {
@@ -531,7 +532,7 @@ final class WeekPlannerViewModel: ObservableObject {
             let priorStatus = weekPlan.days[dayIndex].workouts[workoutIndex].status
             WorkoutEditing.applyAttachedRun(run.detail, to: &weekPlan.days[dayIndex].workouts[workoutIndex])
             linkedWorkoutID = weekPlan.days[dayIndex].workouts[workoutIndex].id
-            if priorStatus != .completed {
+            if priorStatus != .completed && priorStatus != .partiallyCompleted {
                 newlyCompletedID = linkedWorkoutID
             }
         } else {
@@ -1029,9 +1030,9 @@ final class WeekPlannerViewModel: ObservableObject {
 
     private static func isHistoryEligible(_ workout: Workout) -> Bool {
         switch workout.status {
-        case .completed, .partiallyCompleted, .imported:
+        case .completed, .partiallyCompleted, .imported, .skipped:
             return true
-        case .planned, .skipped:
+        case .planned:
             return false
         }
     }

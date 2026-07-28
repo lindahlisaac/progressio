@@ -1,10 +1,12 @@
 import SwiftUI
 
-/// Captures subjective session data after a workout is marked done.
+/// Optional subjective session data after a workout is marked done.
+/// Dismiss / Skip leaves the workout completed — reflections are not required.
 struct ActivityReflectionSheet: View {
     @ObservedObject var viewModel: WeekPlannerViewModel
     let workout: Workout
-    var onFinished: () -> Void
+    var onSaved: () -> Void
+    var onCancelled: () -> Void
 
     @State private var feel: SessionFeel = .ok
     @State private var sessionRPE: Int = 5
@@ -38,6 +40,9 @@ struct ActivityReflectionSheet: View {
                     Text(workout.activityType.rawValue)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    Text("Optional — Skip to finish without logging a reflection.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section("How did it feel?") {
@@ -61,53 +66,7 @@ struct ActivityReflectionSheet: View {
                 Section("Physical discomfort") {
                     Toggle("Report discomfort", isOn: $addingDiscomfort)
                     if addingDiscomfort {
-                        Picker("Body area", selection: $bodyArea) {
-                            ForEach(BodyArea.allCases) { area in
-                                Text(area.rawValue).tag(area)
-                            }
-                        }
-                        Picker("Side", selection: $side) {
-                            ForEach(BodySide.allCases) { s in
-                                Text(s.rawValue).tag(s)
-                            }
-                        }
-                        Stepper(value: $painLevel, in: 1...10) {
-                            Text("Pain: \(painLevel)/10")
-                        }
-                        Picker("Timing", selection: $timing) {
-                            ForEach(DiscomfortTiming.allCases) { t in
-                                Text(t.rawValue).tag(t)
-                            }
-                        }
-                        Picker("During activity", selection: $trend) {
-                            ForEach(DiscomfortTrend.allCases) { t in
-                                Text(t.rawValue).tag(t)
-                            }
-                        }
-
-                        if !matchingIssues.isEmpty {
-                            Picker("Link to issue", selection: Binding(
-                                get: { createNewIssue ? "new" : (selectedExistingIssueID?.uuidString ?? "new") },
-                                set: { value in
-                                    if value == "new" {
-                                        createNewIssue = true
-                                        selectedExistingIssueID = nil
-                                    } else if let id = UUID(uuidString: value) {
-                                        createNewIssue = false
-                                        selectedExistingIssueID = id
-                                    }
-                                }
-                            )) {
-                                Text("Create new issue").tag("new")
-                                ForEach(matchingIssues) { issue in
-                                    Text(issue.displayName).tag(issue.id.uuidString)
-                                }
-                            }
-                        }
-
-                        if createNewIssue {
-                            TextField("Issue title (optional)", text: $issueTitle)
-                        }
+                        discomfortFields
                     }
                 }
             }
@@ -115,7 +74,7 @@ struct ActivityReflectionSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Skip") { onFinished() }
+                    Button("Skip") { onCancelled() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { attemptSave() }
@@ -123,23 +82,77 @@ struct ActivityReflectionSheet: View {
             }
             .keyboardDoneButton()
             .onAppear {
-                if let existing = existingReflection {
-                    feel = existing.feel
-                    sessionRPE = existing.sessionRPE
+                if let existing = existingReflection, existing.reflectionKind == .standard {
+                    feel = existing.feel ?? .ok
+                    sessionRPE = existing.sessionRPE ?? 5
                     notes = existing.performanceNotes ?? ""
                 }
             }
             .alert("Overwrite reflection?", isPresented: $showingOverwriteConfirm) {
-                Button("Keep existing", role: .cancel) { onFinished() }
+                Button("Keep existing") {
+                    onSaved()
+                }
                 Button("Overwrite", role: .destructive) { save(overwrite: true) }
+                Button("Cancel", role: .cancel) {}
             } message: {
-                Text("This workout already has a reflection. Overwrite it with these answers?")
+                Text("This workout already has a reflection. Keep it, or overwrite with these answers?")
             }
         }
     }
 
+    @ViewBuilder
+    private var discomfortFields: some View {
+        Picker("Body area", selection: $bodyArea) {
+            ForEach(BodyArea.allCases) { area in
+                Text(area.rawValue).tag(area)
+            }
+        }
+        Picker("Side", selection: $side) {
+            ForEach(BodySide.allCases) { s in
+                Text(s.rawValue).tag(s)
+            }
+        }
+        Stepper(value: $painLevel, in: 1...10) {
+            Text("Pain: \(painLevel)/10")
+        }
+        Picker("Timing", selection: $timing) {
+            ForEach(DiscomfortTiming.allCases) { t in
+                Text(t.rawValue).tag(t)
+            }
+        }
+        Picker("During activity", selection: $trend) {
+            ForEach(DiscomfortTrend.allCases) { t in
+                Text(t.rawValue).tag(t)
+            }
+        }
+
+        if !matchingIssues.isEmpty {
+            Picker("Link to issue", selection: Binding(
+                get: { createNewIssue ? "new" : (selectedExistingIssueID?.uuidString ?? "new") },
+                set: { value in
+                    if value == "new" {
+                        createNewIssue = true
+                        selectedExistingIssueID = nil
+                    } else if let id = UUID(uuidString: value) {
+                        createNewIssue = false
+                        selectedExistingIssueID = id
+                    }
+                }
+            )) {
+                Text("Create new issue").tag("new")
+                ForEach(matchingIssues) { issue in
+                    Text(issue.displayName).tag(issue.id.uuidString)
+                }
+            }
+        }
+
+        if createNewIssue {
+            TextField("Issue title (optional)", text: $issueTitle)
+        }
+    }
+
     private func attemptSave() {
-        if existingReflection != nil {
+        if let existing = existingReflection, existing.reflectionKind == .standard {
             showingOverwriteConfirm = true
         } else {
             save(overwrite: true)
@@ -149,6 +162,7 @@ struct ActivityReflectionSheet: View {
     private func save(overwrite: Bool) {
         if let reflection = viewModel.saveActivityReflection(
             workoutID: workout.id,
+            reflectionKind: .standard,
             feel: feel,
             sessionRPE: sessionRPE,
             performanceNotes: notes,
@@ -179,6 +193,6 @@ struct ActivityReflectionSheet: View {
                 viewModel.softDeleteActivityIssueReports(forWorkoutID: workout.id)
             }
         }
-        onFinished()
+        onSaved()
     }
 }

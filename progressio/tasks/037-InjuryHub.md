@@ -44,10 +44,10 @@ Read:
 
 ## Acceptance Criteria
 
-- [ ] User can browse active and resolved injuries.
-- [ ] User can open an injury and see time-ordered reports/reviews.
-- [ ] User can resolve from the hub; status persists / syncs.
-- [ ] App builds.
+- [x] User can browse active and resolved injuries.
+- [x] User can open an injury and see time-ordered reports/reviews.
+- [x] User can resolve from the hub; status persists / syncs.
+- [x] App builds.
 
 ## Manual QA Checklist
 

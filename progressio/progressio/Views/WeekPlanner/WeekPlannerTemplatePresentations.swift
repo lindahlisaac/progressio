@@ -120,32 +120,20 @@ struct WeekPlannerTemplatePresentations: ViewModifier {
                 }
             }
             .sheet(isPresented: $showingSkipSheet) {
-                NavigationStack {
-                    Form {
-                        Section("Skip note (optional)") {
-                            TextEditor(text: $skipNote)
-                                .frame(minHeight: 120)
-                        }
-                    }
-                    .navigationTitle("Skip session")
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Cancel") {
-                                showingSkipSheet = false
-                                skipSessionID = nil
-                                skipNote = ""
-                            }
-                        }
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Skip") {
-                                if let id = skipSessionID {
-                                    viewModel.setWorkoutStatus(workoutID: id, status: .skipped, note: skipNote)
-                                }
-                                showingSkipSheet = false
-                                skipSessionID = nil
-                                skipNote = ""
-                            }
-                        }
+                if let id = skipSessionID {
+                    let title = viewModel.weekPlan.days
+                        .flatMap(\.activeWorkouts)
+                        .first(where: { $0.id == id })?
+                        .title ?? "Workout"
+                    SkipReflectionSheet(
+                        viewModel: viewModel,
+                        workoutID: id,
+                        workoutTitle: title,
+                        initialReason: skipNote
+                    ) {
+                        showingSkipSheet = false
+                        skipSessionID = nil
+                        skipNote = ""
                     }
                 }
             }

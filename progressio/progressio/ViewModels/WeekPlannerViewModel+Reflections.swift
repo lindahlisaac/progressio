@@ -34,8 +34,67 @@ extension WeekPlannerViewModel {
         physicalIssues.filter { !$0.isDeleted && $0.status == .active }
     }
 
+    var resolvedPhysicalIssues: [PhysicalIssue] {
+        physicalIssues
+            .filter { !$0.isDeleted && $0.status == .resolved }
+            .sorted { ($0.resolvedAt ?? $0.updatedAt ?? .distantPast) > ($1.resolvedAt ?? $1.updatedAt ?? .distantPast) }
+    }
+
     func matchingActiveIssues(area: BodyArea, side: BodySide) -> [PhysicalIssue] {
         activePhysicalIssues.filter { $0.bodyArea == area && $0.side == side }
+    }
+
+    /// All non-deleted reports for an issue, oldest → newest.
+    func issueReports(forIssueID issueID: UUID) -> [ActivityIssueReport] {
+        activityIssueReports
+            .filter { !$0.isDeleted && $0.physicalIssueID == issueID }
+            .sorted { ($0.createdAt ?? .distantPast) < ($1.createdAt ?? .distantPast) }
+    }
+
+    func latestIssueReport(forIssueID issueID: UUID) -> ActivityIssueReport? {
+        issueReports(forIssueID: issueID).last
+    }
+
+    /// Weekly reviews for an issue, oldest → newest by weekKey.
+    func weeklyReviews(forIssueID issueID: UUID) -> [WeeklyIssueReview] {
+        weeklyIssueReviews
+            .filter { !$0.isDeleted && $0.physicalIssueID == issueID }
+            .sorted { $0.weekKey < $1.weekKey }
+    }
+
+    /// Best-effort workout title/date for a report (current week + local history scan).
+    func workoutContext(forWorkoutID workoutID: UUID) -> (title: String, date: Date)? {
+        if let match = weekPlan.days.flatMap({ day in
+            day.activeWorkouts.map { (day.date, $0) }
+        }).first(where: { $0.1.id == workoutID }) {
+            return (match.1.title, match.1.completedValues.completedAt ?? match.0)
+        }
+        if let entry = historyEntries().first(where: { $0.workout.id == workoutID }) {
+            return (entry.workout.title, entry.workout.completedValues.completedAt ?? entry.dayDate)
+        }
+        return nil
+    }
+
+    func resolvePhysicalIssue(id: UUID, note: String? = nil) {
+        guard let idx = physicalIssues.firstIndex(where: { $0.id == id && !$0.isDeleted }) else { return }
+        physicalIssues[idx].status = .resolved
+        physicalIssues[idx].resolvedAt = Date()
+        if let note {
+            let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                physicalIssues[idx].optionalNotes = trimmed
+            }
+        }
+        SyncMetadata.stampSave(&physicalIssues[idx])
+        persistPhysicalIssues()
+    }
+
+    func reopenPhysicalIssue(id: UUID) {
+        guard let idx = physicalIssues.firstIndex(where: { $0.id == id && !$0.isDeleted }) else { return }
+        physicalIssues[idx].status = .active
+        physicalIssues[idx].resolvedAt = nil
+        SyncMetadata.stampSave(&physicalIssues[idx])
+        persistPhysicalIssues()
     }
 
     /// Reports for an issue, optionally limited to workouts in the current week.
@@ -62,8 +121,9 @@ extension WeekPlannerViewModel {
     @discardableResult
     func saveActivityReflection(
         workoutID: UUID,
-        feel: SessionFeel,
-        sessionRPE: Int,
+        reflectionKind: ActivityReflectionKind = .standard,
+        feel: SessionFeel?,
+        sessionRPE: Int?,
         performanceNotes: String?,
         overwriteExisting: Bool
     ) -> ActivityReflection? {
@@ -79,6 +139,7 @@ extension WeekPlannerViewModel {
             var updated = ActivityReflection(
                 id: activityReflections[idx].id,
                 workoutID: workoutID,
+                reflectionKind: reflectionKind,
                 feel: feel,
                 sessionRPE: sessionRPE,
                 performanceNotes: notes,
@@ -97,6 +158,7 @@ extension WeekPlannerViewModel {
 
         var created = ActivityReflection(
             workoutID: workoutID,
+            reflectionKind: reflectionKind,
             feel: feel,
             sessionRPE: sessionRPE,
             performanceNotes: notes
@@ -105,6 +167,68 @@ extension WeekPlannerViewModel {
         activityReflections.append(created)
         persistActivityReflections()
         return created
+    }
+
+    /// Ensures status is `.completed` after an optional reflection Save/Keep.
+    /// Safe to call when already completed (idempotent).
+    func finalizeComplete(workoutID: UUID) {
+        setWorkoutStatus(workoutID: workoutID, status: .completed)
+    }
+
+    /// Finalizes a skip with optional light reflection (reason + optional discomfort). No fake RPE.
+    @discardableResult
+    func finalizeSkip(
+        workoutID: UUID,
+        reason: String,
+        discomfort: (
+            area: BodyArea,
+            side: BodySide,
+            painLevel: Int,
+            timing: DiscomfortTiming,
+            trend: DiscomfortTrend,
+            existingIssueID: UUID?,
+            newIssueTitle: String?
+        )? = nil
+    ) -> ActivityReflection? {
+        setWorkoutStatus(workoutID: workoutID, status: .skipped, note: reason)
+        let trimmedReason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        // No slim reflection when user skips with no reason and no discomfort.
+        guard !trimmedReason.isEmpty || discomfort != nil else { return nil }
+
+        guard let reflection = saveActivityReflection(
+            workoutID: workoutID,
+            reflectionKind: .skip,
+            feel: nil,
+            sessionRPE: nil,
+            performanceNotes: trimmedReason.isEmpty ? nil : trimmedReason,
+            overwriteExisting: true
+        ) else { return nil }
+
+        if let discomfort {
+            let issue: PhysicalIssue
+            if let existingID = discomfort.existingIssueID,
+               let existing = physicalIssues.first(where: { $0.id == existingID && !$0.isDeleted }) {
+                issue = existing
+            } else {
+                issue = createPhysicalIssue(
+                    area: discomfort.area,
+                    side: discomfort.side,
+                    title: discomfort.newIssueTitle,
+                    notes: nil
+                )
+            }
+            _ = replaceActivityIssueReport(
+                forWorkoutID: workoutID,
+                physicalIssueID: issue.id,
+                activityReflectionID: reflection.id,
+                painLevel: discomfort.painLevel,
+                timing: discomfort.timing,
+                trend: discomfort.trend
+            )
+        } else {
+            softDeleteActivityIssueReports(forWorkoutID: workoutID)
+        }
+        return reflection
     }
 
     @discardableResult

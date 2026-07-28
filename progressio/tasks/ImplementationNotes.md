@@ -17,7 +17,7 @@ The domain model lives in a single file: `Models/Models.swift`. Business logic i
 - `WeekPlannerViewModel` — week navigation, sessions, templates apply, HealthKit import orchestration, export/import
 - `TemplateLibraryViewModel` — strength/run workout templates CRUD
 
-**Navigation** (`ContentView.swift`): Plan → Templates → History → Settings.
+**Navigation** (`ContentView.swift`): Plan → Templates → History → Injuries. Settings via Plan **⋯**.
 
 **Strength logging** lives on the week-plan `Workout`: planned and completed `StrengthRoutineSnapshot`s. Standalone `strengthlog-*.json` is migration-only (Task 031).
 
@@ -615,6 +615,28 @@ Next work is product polish / App Store submission QA per Task 027 checklist (ma
 - **Skip set** — swipe leading Skip/Unskip; skipped rows styled and excluded from prior-history lift sets; still kept in planned set structure.
 - **Reps midpoint** — menu picker highlights midpoint of `repHint` (`8-12` → 10) when reps are empty; does not auto-write until the user picks.
 
+### Task 035 — Strength Session Summary and Export
+
+- **Summary** (when completed/locked): exercises, sets logged (non-skipped with weight or reps), skipped count, total reps, volume when parsable.
+- **Ellipsis menu** on `StrengthLogView`: Copy / Share text (title header + `Lift – N sets [(K skipped)]`); Prepare / Share JSON (`formatVersion: 1`, session id/title/date/exercises/sets with `isSkipped`).
+- **Text set-count rule:** only non-skipped sets with logged work; skipped annotated separately.
+- **JSON import** remains out of scope; export schema enables a future coach import.
+
+### Task 036 — Optional Reflections + Light Skip
+
+- **Reflections are optional.** Completing a workout sets `.completed` immediately; the activity reflection sheet is offered but **Skip** dismisses without requiring answers.
+- **`ActivityReflection.reflectionKind`:** `.standard` (feel + sRPE) vs `.skip` (optional reason in notes; feel/RPE nil). Old JSON decodes as `.standard`.
+- **Skip workout:** light sheet with optional reason + optional discomfort; `finalizeSkip` sets `.skipped` (+ slim skip reflection when useful for issue linking).
+- **History** includes skipped workouts (Skipped badge). Week-close “skip all unresolved” still auto-skips without the light sheet.
+- User override of earlier “gate complete on Save” decision — complete is not blocked on reflection.
+
+### Task 037 — Injury Hub
+
+- **Injuries tab** (replaces Settings on the tab bar) — Active | Resolved lists; row shows area/side/title, started, last pain.
+- **Settings** moved to Plan toolbar **⋯ → Settings** sheet.
+- **Detail** — chronological activity reports (workout title when found) + weekly reviews; **Mark resolved** (optional note → `optionalNotes`) and **Reopen**.
+- Weekly reflection resolve path unchanged; hub is the longitudinal browse/resolve UI.
+
 ---
 
 ## Source File Index
@@ -622,20 +644,24 @@ Next work is product polish / App Store submission QA per Task 027 checklist (ma
 ```
 progressio/progressio/
 ├── Models/ActivityMetricPreferences.swift
+├── Models/StrengthSessionExport.swift
 ├── Models/ReflectionModels.swift
 ├── Models/TemplateSnapshot.swift
 ├── Services/ReflectionFileStores.swift
 ├── ViewModels/WeekPlannerViewModel+Reflections.swift
+├── Views/Settings/InjuryHubView.swift
 ├── Views/WeekPlanner/ActivityReflectionSheet.swift
+├── Views/WeekPlanner/SkipReflectionSheet.swift
 ├── Views/WeekPlanner/WeeklyReflectionSheet.swift
 ├── Views/WeekPlanner/StairMasterDetailView.swift
 ├── Views/WeekPlanner/StrengthLogView.swift
 └── … (stores, migration through v7; strength files migration-only)
 progressio/progressioTests/ReflectionLogicTests.swift
 progressio/progressioTests/StrengthSetUXTests.swift
+progressio/progressioTests/StrengthSessionExportTests.swift
 progressio/docs/DataModel.puml
 ```
 
 ---
 
-*Last updated: Task 034 Strength Set UX Polish.*
+*Last updated: Task 037 Injury Hub.*

@@ -306,4 +306,39 @@ final class ReflectionLogicTests: XCTestCase {
         XCTAssertTrue(vm.activityIssueReports.filter { !$0.isDeleted && $0.workoutID == workout.id }.isEmpty)
         XCTAssertFalse(vm.activityReflections.filter { $0.workoutID == workout.id }.isEmpty) // tombstone kept
     }
+
+    // MARK: - Task 036 (reflections optional)
+
+    func testToggleStatusCompletesImmediatelyReflectionOptional() {
+        let workout = Workout.manual(activityType: .roadRun, plannedDate: Date(), title: "Run")
+        let vm = makeViewModel(week: mondayWeek(with: [workout]))
+        XCTAssertTrue(vm.toggleStatus(workoutID: workout.id))
+        let status = vm.weekPlan.days.flatMap(\.activeWorkouts).first { $0.id == workout.id }?.status
+        XCTAssertEqual(status, .completed)
+    }
+
+    func testFinalizeSkipAllowsEmptyReasonWithoutFakeRPE() {
+        let workout = Workout.manual(activityType: .strength, plannedDate: Date(), title: "Push")
+        let vm = makeViewModel(week: mondayWeek(with: [workout]))
+        let reflection = vm.finalizeSkip(workoutID: workout.id, reason: "", discomfort: nil)
+        let updated = vm.weekPlan.days.flatMap(\.activeWorkouts).first { $0.id == workout.id }
+        XCTAssertEqual(updated?.status, .skipped)
+        XCTAssertNil(updated?.skipReason)
+        XCTAssertNil(reflection)
+    }
+
+    func testSkipReflectionDecodesMissingKindAsStandardWithDefaults() throws {
+        let json = """
+        {
+          "id": "00000000-0000-0000-0000-000000000010",
+          "workoutID": "00000000-0000-0000-0000-000000000011",
+          "feel": 3,
+          "sessionRPE": 5
+        }
+        """.data(using: .utf8)!
+        let reflection = try JSONDecoder().decode(ActivityReflection.self, from: json)
+        XCTAssertEqual(reflection.reflectionKind, .standard)
+        XCTAssertEqual(reflection.feel, .ok)
+        XCTAssertEqual(reflection.sessionRPE, 5)
+    }
 }

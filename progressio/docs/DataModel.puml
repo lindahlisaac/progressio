@@ -297,8 +297,9 @@ package "Reflections & physical issues" {
     **CK: ActivityReflection**
     id : UUID
     workoutID : UUID
-    feel : SessionFeel
-    sessionRPE : Int (1–10)
+    reflectionKind : ActivityReflectionKind
+    feel : SessionFeel?
+    sessionRPE : Int? (1–10)
     performanceNotes : String?
     + sync fields…
   }

@@ -32,7 +32,9 @@ struct StrengthLogView: View {
     @State private var titleWorkItem: DispatchWorkItem?
     /// Last weight copied from the first fillable set — later sets matching this (or empty) stay in sync while typing.
     @State private var lastAutofilledWeightByExercise: [UUID: String] = [:]
-
+    @State private var didCopyText = false
+    @State private var jsonExportURL: URL?
+    @State private var showingJSONShare = false
     init(
         workout: Workout,
         onNoteChange: ((String) -> Void)? = nil,
@@ -130,6 +132,21 @@ struct StrengthLogView: View {
                     .onChange(of: note) { newValue in
                         scheduleNotePersist(newValue)
                     }
+            }
+
+            if isCompleted || isLocked {
+                Section("Summary") {
+                    let summary = StrengthSessionExport.summary(from: exercises)
+                    LabeledContent("Exercises", value: "\(summary.exerciseCount)")
+                    LabeledContent("Sets logged", value: "\(summary.setsLogged)")
+                    if summary.setsSkipped > 0 {
+                        LabeledContent("Sets skipped", value: "\(summary.setsSkipped)")
+                    }
+                    LabeledContent("Total reps", value: "\(summary.totalReps)")
+                    if summary.hasVolume {
+                        LabeledContent("Volume", value: "\(summary.volumeDisplay) lb")
+                    }
+                }
             }
 
             ForEach($exercises) { $exercise in
@@ -269,14 +286,6 @@ struct StrengthLogView: View {
         .navigationTitle(title.isEmpty ? "Strength" : title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    showingAddExerciseSheet = true
-                } label: {
-                    Label("Add lift", systemImage: "plus")
-                }
-                .disabled(isLocked)
-            }
             ToolbarItem(placement: .cancellationAction) {
                 Button(role: .destructive) {
                     showingResetConfirm = true
@@ -285,12 +294,66 @@ struct StrengthLogView: View {
                 }
                 .disabled(isLocked || exercises == initialExercises)
             }
+            ToolbarItem(placement: .primaryAction) {
+                HStack(spacing: 12) {
+                    Button {
+                        showingAddExerciseSheet = true
+                    } label: {
+                        Label("Add lift", systemImage: "plus")
+                    }
+                    .disabled(isLocked)
+
+                    Menu {
+                        Section("Export") {
+                            Button {
+                                UIPasteboard.general.string = textExport
+                                didCopyText = true
+                            } label: {
+                                Label(didCopyText ? "Copied Text" : "Copy Text", systemImage: didCopyText ? "checkmark" : "doc.on.doc")
+                            }
+                            ShareLink(item: textExport) {
+                                Label("Share Text", systemImage: "square.and.arrow.up")
+                            }
+                            Button {
+                                shareJSON()
+                            } label: {
+                                Label("Share JSON", systemImage: "doc.badge.gearshape")
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .accessibilityLabel("Session options")
+                }
+            }
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
                 Button("Done") {
                     dismissKeyboard()
                 }
             }
+        }
+        .sheet(isPresented: $showingJSONShare) {
+            NavigationStack {
+                List {
+                    if let jsonExportURL {
+                        ShareLink(item: jsonExportURL) {
+                            Label("Share strength JSON", systemImage: "square.and.arrow.up")
+                        }
+                    } else {
+                        Text("Could not create export file.")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .navigationTitle("Export JSON")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { showingJSONShare = false }
+                    }
+                }
+            }
+            .presentationDetents([.medium])
         }
         .scrollDismissesKeyboard(.interactively)
         .onChange(of: exercises) { newValue in
@@ -367,6 +430,22 @@ struct StrengthLogView: View {
 
     private func priorPerformance(for liftName: String) -> PriorLiftPerformance? {
         comparison.priorByLift[StrengthHistoryLookup.normalizeLiftName(liftName)]
+    }
+
+    private var textExport: String {
+        StrengthSessionExport.plainText(title: title, exercises: exercises)
+    }
+
+    private func shareJSON() {
+        persistState()
+        jsonExportURL = StrengthSessionExport.writeJSONFile(
+            sessionId: workout.id,
+            title: title,
+            date: workout.plannedDate,
+            notes: note,
+            exercises: exercises
+        )
+        showingJSONShare = true
     }
 
     private func refreshPriorComparison() {

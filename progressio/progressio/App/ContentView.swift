@@ -34,10 +34,10 @@ struct ContentView: View {
             }
 
             NavigationStack {
-                SettingsView(weekViewModel: weekViewModel)
+                InjuryHubView(viewModel: weekViewModel)
             }
             .tabItem {
-                Label("Settings", systemImage: "gearshape")
+                Label("Injuries", systemImage: "cross.case")
             }
         }
         .environmentObject(ActivityMetricPreferenceStore.shared)

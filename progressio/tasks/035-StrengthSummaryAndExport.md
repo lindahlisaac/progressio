@@ -47,10 +47,10 @@ Read:
 
 ## Acceptance Criteria
 
-- [ ] Completed strength session shows a basic numeric summary.
-- [ ] Share sheet / export produces text in the requested style.
-- [ ] JSON export file contains lifts, weights, reps, skip flags.
-- [ ] App builds.
+- [x] Completed strength session shows a basic numeric summary.
+- [x] Share sheet / export produces text in the requested style.
+- [x] JSON export file contains lifts, weights, reps, skip flags.
+- [x] App builds.
 
 ## Manual QA Checklist
 

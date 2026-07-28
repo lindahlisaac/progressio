@@ -17,8 +17,8 @@ Source of truth for tasks 032–041. Coding agents must follow these over older 
 
 ## Reflection gating (036)
 
-8. **Complete gate** — Status stays **planned** (or prior non-complete) until reflection **Save**. Dismissing the sheet **does not** complete the workout. **Yes.**
-9. **Skip reflection** — **Lighter** than full activity reflection: skip reason + optional injury/discomfort link. Not the full feel/sessionRPE performance form unless reuse is trivially shared. **Requiredness:** capture the light skip reflection as part of skip confirm (user should land on it after skip reason); keep it small so it isn’t burdensome. Prefer required light form (Save to finalize skip) to match completion discipline; if Save-dismiss symmetry is awkward, at minimum always present it and persist reason on the workout even if injury section is skipped.
+8. **Complete gate** — **Overridden:** reflections are **optional**. Workout completes immediately; reflection sheet can be Skipped/dismissed without answers. (Earlier “Save required to complete” decision reversed.)
+9. **Skip reflection** — **Lighter** than full activity reflection: optional reason + optional injury/discomfort. Not the full feel/sessionRPE form. Reason is **not** required.
 
 ## Strength export (035)
 

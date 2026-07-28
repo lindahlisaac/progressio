@@ -211,14 +211,21 @@ enum WeeklyIssueTrend: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum ActivityReflectionKind: String, Codable, Equatable {
+    case standard
+    case skip
+}
+
 // MARK: - Entities
 
 struct ActivityReflection: Identifiable, Codable, Equatable {
     let id: UUID
     var workoutID: UUID
-    var feel: SessionFeel
-    /// Session RPE 1–10 (independent of strength per-lift RPE).
-    var sessionRPE: Int
+    /// `.standard` = full feel/RPE; `.skip` = light skip reason (no fake RPE).
+    var reflectionKind: ActivityReflectionKind
+    var feel: SessionFeel?
+    /// Session RPE 1–10 (independent of strength per-lift RPE). Nil for skip reflections.
+    var sessionRPE: Int?
     var performanceNotes: String?
     var schemaVersion: Int
     var createdAt: Date?
@@ -230,8 +237,9 @@ struct ActivityReflection: Identifiable, Codable, Equatable {
     init(
         id: UUID = UUID(),
         workoutID: UUID,
-        feel: SessionFeel = .ok,
-        sessionRPE: Int = 5,
+        reflectionKind: ActivityReflectionKind = .standard,
+        feel: SessionFeel? = .ok,
+        sessionRPE: Int? = 5,
         performanceNotes: String? = nil,
         schemaVersion: Int = WorkoutSchema.currentVersion,
         createdAt: Date? = Date(),
@@ -242,8 +250,13 @@ struct ActivityReflection: Identifiable, Codable, Equatable {
     ) {
         self.id = id
         self.workoutID = workoutID
+        self.reflectionKind = reflectionKind
         self.feel = feel
-        self.sessionRPE = min(10, max(1, sessionRPE))
+        if let sessionRPE {
+            self.sessionRPE = min(10, max(1, sessionRPE))
+        } else {
+            self.sessionRPE = nil
+        }
         self.performanceNotes = performanceNotes
         self.schemaVersion = schemaVersion
         self.createdAt = createdAt
@@ -257,8 +270,18 @@ struct ActivityReflection: Identifiable, Codable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
         workoutID = try c.decode(UUID.self, forKey: .workoutID)
-        feel = try c.decodeIfPresent(SessionFeel.self, forKey: .feel) ?? .ok
-        sessionRPE = try c.decodeIfPresent(Int.self, forKey: .sessionRPE) ?? 5
+        let kind = try c.decodeIfPresent(ActivityReflectionKind.self, forKey: .reflectionKind) ?? .standard
+        reflectionKind = kind
+        let decodedFeel = try c.decodeIfPresent(SessionFeel.self, forKey: .feel)
+        let decodedRPE = try c.decodeIfPresent(Int.self, forKey: .sessionRPE)
+        switch kind {
+        case .standard:
+            feel = decodedFeel ?? .ok
+            sessionRPE = decodedRPE ?? 5
+        case .skip:
+            feel = decodedFeel
+            sessionRPE = decodedRPE
+        }
         performanceNotes = try c.decodeIfPresent(String.self, forKey: .performanceNotes)
         schemaVersion = try c.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? WorkoutSchema.currentVersion
         updatedAt = try c.decodeIfPresent(Date.self, forKey: .updatedAt)

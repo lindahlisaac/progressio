@@ -356,7 +356,11 @@ If the same HealthKit UUID already exists locally, the workout must not be impor
 Standalone synced entities (not embedded in WeekPlan / Workout):
 
 ### ActivityReflection
-- id, workoutID, feel (1–5), sessionRPE (1–10), performanceNotes
+- id, workoutID, reflectionKind (`standard` | `skip`)
+- feel (1–5) and sessionRPE (1–10) — required for `.standard`; nil for `.skip` (no fake RPE)
+- performanceNotes (skip reason for `.skip`)
+- Completion is **not** gated: workout becomes `.completed` when the user marks complete; the reflection sheet is optional (Skip dismisses without answers).
+- Skip workouts use a light sheet; reason is optional. `reflectionKind: skip` stores optional notes without fake RPE.
 - One active reflection per workout
 
 ### WeeklyReflection
@@ -364,9 +368,11 @@ Standalone synced entities (not embedded in WeekPlan / Workout):
 
 ### PhysicalIssue
 - Long-lived injury record: bodyArea, side, status (active/resolved), startedAt, resolvedAt
+- Browse / resolve / reopen in the **Injuries** tab (Injury Hub); Settings is under Plan **⋯**; weekly reflection resolve still works
 
 ### ActivityIssueReport / WeeklyIssueReview
 - Time-stamped links from activity or week reflections to a PhysicalIssue
+- Injury Hub detail shows chronological reports + weekly reviews for an issue
 
 ### WeekPlan completion
 - `isWeekComplete`, `weekCompletedAt` on the week envelope

@@ -29,6 +29,7 @@ struct WeekPlannerView: View {
     @State private var showingWeeklyReflection = false
     @State private var showingWeekCloseValidation = false
     @State private var showingSkipUnresolvedConfirm = false
+    @State private var showingSettings = false
 
     private var reflectionWorkout: Workout? {
         guard let id = reflectionWorkoutID else { return nil }
@@ -51,6 +52,17 @@ struct WeekPlannerView: View {
         }
         .navigationTitle(plannerNavigationTitle)
         .toolbar { plannerToolbarContent }
+        .sheet(isPresented: $showingSettings) {
+            NavigationStack {
+                SettingsView(weekViewModel: viewModel)
+                    .environmentObject(metricPreferences)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { showingSettings = false }
+                        }
+                    }
+            }
+        }
         .onAppear {
             viewModel.dedupeUnattachedRuns()
         }
@@ -136,6 +148,14 @@ struct WeekPlannerView: View {
                         showingWeekExport = true
                     } label: {
                         Label("Export Week Summary", systemImage: "square.and.arrow.up")
+                    }
+                }
+
+                Section {
+                    Button {
+                        showingSettings = true
+                    } label: {
+                        Label("Settings", systemImage: "gearshape")
                     }
                 }
             } label: {

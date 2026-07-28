@@ -16,7 +16,7 @@ struct HistoryView: View {
                 ContentUnavailableView(
                     "No history yet",
                     systemImage: "clock",
-                    description: Text("Completed and imported workouts from your weeks will show up here.")
+                    description: Text("Completed, imported, and skipped workouts from your weeks will show up here.")
                 )
             } else {
                 ForEach(entries) { entry in
@@ -37,10 +37,19 @@ struct HistoryView: View {
             get: { reflectionWorkout.map { HistoryIdentifiedWorkout(workout: $0) } },
             set: { reflectionWorkoutID = $0?.id }
         )) { item in
-            ActivityReflectionSheet(viewModel: weekViewModel, workout: item.workout) {
-                reflectionWorkoutID = nil
-                reload()
-            }
+            ActivityReflectionSheet(
+                viewModel: weekViewModel,
+                workout: item.workout,
+                onSaved: {
+                    weekViewModel.finalizeComplete(workoutID: item.workout.id)
+                    reflectionWorkoutID = nil
+                    reload()
+                },
+                onCancelled: {
+                    reflectionWorkoutID = nil
+                    reload()
+                }
+            )
         }
     }
 
@@ -235,7 +244,7 @@ private struct HistoryRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if let reflection {
-                    Text("\(reflection.feel.label) · sRPE \(reflection.sessionRPE)")
+                    Text(reflectionSubtitle(reflection))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
@@ -261,5 +270,24 @@ private struct HistoryRow: View {
         formatter.dateStyle = .medium
         formatter.timeStyle = .none
         return "\(formatter.string(from: entry.dayDate)) · \(entry.workout.activityType.rawValue)"
+    }
+
+    private func reflectionSubtitle(_ reflection: ActivityReflection) -> String {
+        switch reflection.reflectionKind {
+        case .skip:
+            if let notes = reflection.performanceNotes, !notes.isEmpty {
+                return "Skipped · \(notes)"
+            }
+            return "Skipped"
+        case .standard:
+            var parts: [String] = []
+            if let feel = reflection.feel {
+                parts.append(feel.label)
+            }
+            if let rpe = reflection.sessionRPE {
+                parts.append("sRPE \(rpe)")
+            }
+            return parts.isEmpty ? "Reflection" : parts.joined(separator: " · ")
+        }
     }
 }

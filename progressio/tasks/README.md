@@ -90,9 +90,9 @@ The original roadmap assumed a greenfield data model refactor. The audit found:
 | 032 | `032-StairMasterActivityType.md` | **Complete** |
 | 033 | `033-PrimaryMetricPreferences.md` | **Complete** |
 | 034 | `034-StrengthSetUXPolish.md` | **Complete** |
-| 035 | `035-StrengthSummaryAndExport.md` | Pending |
-| 036 | `036-ReflectionGatedCompletionAndSkip.md` | Pending (supersedes 029 optional-complete) |
-| 037 | `037-InjuryHub.md` | Pending |
+| 035 | `035-StrengthSummaryAndExport.md` | **Complete** |
+| 036 | `036-ReflectionGatedCompletionAndSkip.md` | **Complete** |
+| 037 | `037-InjuryHub.md` | **Complete** |
 | 038 | `038-HistoryReflectionEditWarning.md` | Pending |
 | 039 | `039-DayNotes.md` | Pending |
 | 040 | `040-TemplatePlannedMileage.md` | Pending |

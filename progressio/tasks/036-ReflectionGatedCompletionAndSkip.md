@@ -71,11 +71,11 @@ Read:
 
 ## Acceptance Criteria
 
-- [ ] No complete path leaves `.completed` without saved (or kept) activity reflection.
-- [ ] Dismissing complete reflection leaves workout not completed.
-- [ ] Skip uses light sheet (reason + optional injury); not full performance form.
-- [ ] Docs supersede 029 optional-on-complete.
-- [ ] App builds.
+- [x] Completing a workout does not require saving a reflection (Skip dismisses; workout stays completed).
+- [x] Saving a reflection still persists feel/RPE/discomfort when the user chooses to.
+- [x] Skip workout uses light sheet (optional reason + optional injury); not full performance form.
+- [x] Docs note reflections are optional (overrides earlier gate-on-Save decision).
+- [x] App builds.
 
 ## Manual QA Checklist
 

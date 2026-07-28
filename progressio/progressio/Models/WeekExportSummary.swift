@@ -82,11 +82,26 @@ enum WeekExportSummary {
     private static func workoutLine(from workout: Workout, reflection: ActivityReflection?) -> WorkoutLine {
         let reflectionText: String?
         if let reflection {
-            var parts = ["Feel \(reflection.feel.label)", "sRPE \(reflection.sessionRPE)"]
-            if let notes = reflection.performanceNotes, !notes.isEmpty {
-                parts.append(notes)
+            switch reflection.reflectionKind {
+            case .skip:
+                if let notes = reflection.performanceNotes, !notes.isEmpty {
+                    reflectionText = "Skipped · \(notes)"
+                } else {
+                    reflectionText = "Skipped"
+                }
+            case .standard:
+                var parts: [String] = []
+                if let feel = reflection.feel {
+                    parts.append("Feel \(feel.label)")
+                }
+                if let rpe = reflection.sessionRPE {
+                    parts.append("sRPE \(rpe)")
+                }
+                if let notes = reflection.performanceNotes, !notes.isEmpty {
+                    parts.append(notes)
+                }
+                reflectionText = parts.isEmpty ? nil : parts.joined(separator: " · ")
             }
-            reflectionText = parts.joined(separator: " · ")
         } else {
             reflectionText = nil
         }
