@@ -106,6 +106,36 @@ struct HistoryView: View {
                     reload()
                 }
             )
+        } else if workout.activityType == .stairMaster {
+            StairMasterDetailView(
+                workout: workout,
+                onSave: { title, plannedDuration, plannedElevation, plannedLevel, status, actualDuration, actualElevation, actualLevel, timePeriod, notes in
+                    let wasComplete = workout.status == .completed || workout.status == .partiallyCompleted
+                    weekViewModel.mutateWorkout(weekStart: entry.weekStart, workoutID: workout.id) { w in
+                        WorkoutEditing.applyEnduranceSave(
+                            to: &w,
+                            title: title,
+                            runType: nil,
+                            plannedDistance: "",
+                            plannedDuration: plannedDuration,
+                            plannedElevation: plannedElevation,
+                            plannedLevel: plannedLevel,
+                            actualDistance: nil,
+                            actualDuration: actualDuration,
+                            actualElevation: actualElevation,
+                            actualLevel: actualLevel,
+                            status: status,
+                            timePeriod: timePeriod,
+                            activityType: .stairMaster,
+                            notes: notes
+                        )
+                    }
+                    reload()
+                    if status == .completed, !wasComplete {
+                        reflectionWorkoutID = workout.id
+                    }
+                }
+            )
         } else if workout.activityType.sessionKind == .run {
             RunDetailView(
                 workout: workout,

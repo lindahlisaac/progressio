@@ -55,7 +55,8 @@ enum TemplateSnapshot {
                         id: set.id,
                         weight: weight,
                         reps: reps,
-                        repHint: set.repHint ?? set.targetReps.map(String.init) ?? ""
+                        repHint: set.repHint ?? set.targetReps.map(String.init) ?? "",
+                        isSkipped: set.isSkipped
                     )
                 },
                 rpe: exercise.exerciseRPE ?? ""
@@ -74,16 +75,37 @@ enum TemplateSnapshot {
                         id: set.id,
                         setNumber: setIndex + 1,
                         targetReps: Int(set.repHint.filter(\.isNumber)),
-                        targetWeight: parseDouble(from: set.weight),
+                        targetWeight: set.isSkipped ? nil : parseDouble(from: set.weight),
                         repHint: emptyToNil(set.repHint),
-                        actualReps: emptyToNil(set.reps),
-                        actualWeight: emptyToNil(set.weight)
+                        actualReps: set.isSkipped ? nil : emptyToNil(set.reps),
+                        actualWeight: set.isSkipped ? nil : emptyToNil(set.weight),
+                        isSkipped: set.isSkipped
                     )
                 },
                 exerciseRPE: emptyToNil(exercise.rpe)
             )
         }
         return StrengthRoutineSnapshot(exercises: mapped)
+    }
+
+    /// Midpoint of a rep hint like `8-12`, `8–12`, or a single `10`. Nil when unparseable.
+    static func midpointReps(from hint: String) -> Int? {
+        let trimmed = hint.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let normalized = trimmed
+            .replacingOccurrences(of: "–", with: "-")
+            .replacingOccurrences(of: "—", with: "-")
+            .replacingOccurrences(of: " to ", with: "-", options: .caseInsensitive)
+        if let dash = normalized.range(of: "-") {
+            let leftDigits = normalized[..<dash.lowerBound].filter(\.isNumber)
+            let rightDigits = normalized[dash.upperBound...].filter(\.isNumber)
+            if let low = Int(leftDigits), let high = Int(rightDigits), low > 0, high > 0 {
+                return max(0, min(99, (low + high) / 2))
+            }
+        }
+        let digits = normalized.filter(\.isNumber)
+        guard let value = Int(digits), value > 0 else { return nil }
+        return max(0, min(99, value))
     }
 
     private static func emptyToNil(_ value: String) -> String? {

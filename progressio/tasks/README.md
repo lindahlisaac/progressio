@@ -33,6 +33,8 @@ Tasks are ordered intentionally. Later tasks assume earlier ones are complete.
 | Navigation | 022–023 | History tab, settings/data tools polish |
 | Periodized blocks | 024–026 | Models, UI, apply to calendar |
 | Release | 027 | Final polish and QA checklist |
+| Subjective data | 028–031 | Reflections, issues, strength single path |
+| Next features | 032–041 | StairMaster, metrics, strength UX, reflection gates, injuries, day notes, replace |
 
 ## What Changed After Task 001
 
@@ -84,6 +86,17 @@ The original roadmap assumed a greenfield data model refactor. The audit found:
 | 029 | `029-subj-data-impl` | **Complete** (impl; gaps → 030) |
 | 030 | `030-ReflectionGapsFrom029Review.md` | **Complete** |
 | 031 | `031-SingleStrengthPathOnWeekPlan.md` | **Complete** |
+| — | `NEXT-FEATURES-QUESTIONS.md` | **Answered** (locked decisions for 032–041) |
+| 032 | `032-StairMasterActivityType.md` | **Complete** |
+| 033 | `033-PrimaryMetricPreferences.md` | **Complete** |
+| 034 | `034-StrengthSetUXPolish.md` | **Complete** |
+| 035 | `035-StrengthSummaryAndExport.md` | Pending |
+| 036 | `036-ReflectionGatedCompletionAndSkip.md` | Pending (supersedes 029 optional-complete) |
+| 037 | `037-InjuryHub.md` | Pending |
+| 038 | `038-HistoryReflectionEditWarning.md` | Pending |
+| 039 | `039-DayNotes.md` | Pending |
+| 040 | `040-TemplatePlannedMileage.md` | Pending |
+| 041 | `041-ReplaceWorkoutWithReason.md` | Pending |
 
 ## Task File Format
 

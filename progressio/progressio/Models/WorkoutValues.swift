@@ -7,6 +7,8 @@ struct PlannedValues: Codable, Equatable {
     var plannedIntensityRPE: String?
     var plannedDescription: String?
     var plannedRoute: String?
+    /// StairMaster machine level 1–20 (string for consistency with other metrics).
+    var plannedLevel: String?
     var plannedStrengthRoutineSnapshot: StrengthRoutineSnapshot?
 
     static let empty = PlannedValues()
@@ -21,6 +23,8 @@ struct CompletedValues: Codable, Equatable {
     var completedHeartRateAverage: String?
     var completedHeartRateMax: String?
     var completedDescription: String?
+    /// StairMaster machine level 1–20.
+    var completedLevel: String?
     var completedStrengthRoutineSnapshot: StrengthRoutineSnapshot?
     var completedAt: Date?
 
@@ -75,6 +79,8 @@ struct StrengthSetSnapshot: Codable, Equatable, Identifiable {
     var actualReps: String?
     var actualWeight: String?
     var notes: String?
+    /// Explicit skip (distinct from empty / not logged). Absent in older JSON → false.
+    var isSkipped: Bool
 
     init(
         id: UUID = UUID(),
@@ -84,7 +90,8 @@ struct StrengthSetSnapshot: Codable, Equatable, Identifiable {
         repHint: String? = nil,
         actualReps: String? = nil,
         actualWeight: String? = nil,
-        notes: String? = nil
+        notes: String? = nil,
+        isSkipped: Bool = false
     ) {
         self.id = id
         self.setNumber = setNumber
@@ -94,5 +101,19 @@ struct StrengthSetSnapshot: Codable, Equatable, Identifiable {
         self.actualReps = actualReps
         self.actualWeight = actualWeight
         self.notes = notes
+        self.isSkipped = isSkipped
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        setNumber = try container.decode(Int.self, forKey: .setNumber)
+        targetReps = try container.decodeIfPresent(Int.self, forKey: .targetReps)
+        targetWeight = try container.decodeIfPresent(Double.self, forKey: .targetWeight)
+        repHint = try container.decodeIfPresent(String.self, forKey: .repHint)
+        actualReps = try container.decodeIfPresent(String.self, forKey: .actualReps)
+        actualWeight = try container.decodeIfPresent(String.self, forKey: .actualWeight)
+        notes = try container.decodeIfPresent(String.self, forKey: .notes)
+        isSkipped = try container.decodeIfPresent(Bool.self, forKey: .isSkipped) ?? false
     }
 }

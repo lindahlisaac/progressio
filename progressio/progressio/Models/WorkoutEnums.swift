@@ -6,23 +6,41 @@ enum ActivityType: String, Codable, CaseIterable, Identifiable {
     case trailRun = "Trail Run"
     case walk = "Walk"
     case bike = "Bike"
+    case stairMaster = "StairMaster"
     case strength = "Strength"
 
     var id: String { rawValue }
 
     /// Modalities offered in the planner add-workout flow.
-    static let plannerAddTypes: [ActivityType] = [.roadRun, .trailRun, .walk, .bike, .strength]
+    static let plannerAddTypes: [ActivityType] = [.roadRun, .trailRun, .walk, .bike, .stairMaster, .strength]
 
     var systemImage: String {
         switch self {
         case .roadRun, .trailRun: return "figure.run"
         case .walk: return "figure.walk"
         case .bike: return "bicycle"
+        case .stairMaster: return "figure.stair.stepper"
         case .strength: return "dumbbell"
         }
     }
 
     var defaultTitle: String { rawValue }
+
+    /// Endurance modalities that use distance as a primary planning metric.
+    var usesDistanceMetric: Bool {
+        switch self {
+        case .roadRun, .trailRun, .walk, .bike: return true
+        case .stairMaster, .strength: return false
+        }
+    }
+
+    /// Whether run-type (easy/tempo/…) chips apply.
+    var usesRunType: Bool {
+        switch self {
+        case .roadRun, .trailRun, .walk: return true
+        case .bike, .stairMaster, .strength: return false
+        }
+    }
 }
 
 enum WorkoutStatus: String, Codable, CaseIterable {
@@ -90,7 +108,7 @@ extension ActivityType {
         switch self {
         case .strength: return .strength
         case .roadRun, .trailRun, .walk: return .run
-        case .bike: return .cycle
+        case .bike, .stairMaster: return .cycle
         }
     }
 }

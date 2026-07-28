@@ -1,6 +1,6 @@
 import Foundation
 
-/// Reusable blueprint for road run, trail run, walk, and bike workouts.
+/// Reusable blueprint for road run, trail run, walk, bike, and StairMaster workouts.
 struct EnduranceTemplate: Identifiable, Codable {
     let id: UUID
     var name: String
@@ -9,6 +9,8 @@ struct EnduranceTemplate: Identifiable, Codable {
     var plannedDistance: String?
     var plannedDuration: String?
     var plannedElevationGain: String?
+    /// StairMaster machine level 1–20.
+    var plannedLevel: String?
     var description: String?
     var intensityRPE: String?
     var route: String?
@@ -27,6 +29,7 @@ struct EnduranceTemplate: Identifiable, Codable {
         plannedDistance: String? = nil,
         plannedDuration: String? = nil,
         plannedElevationGain: String? = nil,
+        plannedLevel: String? = nil,
         description: String? = nil,
         intensityRPE: String? = nil,
         route: String? = nil,
@@ -44,6 +47,7 @@ struct EnduranceTemplate: Identifiable, Codable {
         self.plannedDistance = plannedDistance
         self.plannedDuration = plannedDuration
         self.plannedElevationGain = plannedElevationGain
+        self.plannedLevel = plannedLevel
         self.description = description
         self.intensityRPE = intensityRPE
         self.route = route
@@ -65,6 +69,7 @@ struct EnduranceTemplate: Identifiable, Codable {
         plannedDistance = try container.decodeIfPresent(String.self, forKey: .plannedDistance)
         plannedDuration = try container.decodeIfPresent(String.self, forKey: .plannedDuration)
         plannedElevationGain = try container.decodeIfPresent(String.self, forKey: .plannedElevationGain)
+        plannedLevel = try container.decodeIfPresent(String.self, forKey: .plannedLevel)
         description = try container.decodeIfPresent(String.self, forKey: .description)
         intensityRPE = try container.decodeIfPresent(String.self, forKey: .intensityRPE)
         route = try container.decodeIfPresent(String.self, forKey: .route)
@@ -85,6 +90,7 @@ struct EnduranceTemplate: Identifiable, Codable {
             plannedDistance: nil,
             plannedDuration: nil,
             plannedElevationGain: nil,
+            plannedLevel: nil,
             description: template.note,
             intensityRPE: nil,
             route: nil,
@@ -99,5 +105,5 @@ struct EnduranceTemplate: Identifiable, Codable {
 }
 
 extension ActivityType {
-    static let enduranceTemplateTypes: [ActivityType] = [.roadRun, .trailRun, .walk, .bike]
+    static let enduranceTemplateTypes: [ActivityType] = [.roadRun, .trailRun, .walk, .bike, .stairMaster]
 }

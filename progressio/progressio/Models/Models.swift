@@ -94,12 +94,29 @@ struct SetLog: Identifiable, Codable, Equatable {
     var weight: String
     var reps: String
     var repHint: String
-    
-    init(id: UUID = UUID(), weight: String = "", reps: String = "", repHint: String = "") {
+    var isSkipped: Bool
+
+    init(
+        id: UUID = UUID(),
+        weight: String = "",
+        reps: String = "",
+        repHint: String = "",
+        isSkipped: Bool = false
+    ) {
         self.id = id
         self.weight = weight
         self.reps = reps
         self.repHint = repHint
+        self.isSkipped = isSkipped
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        weight = try container.decodeIfPresent(String.self, forKey: .weight) ?? ""
+        reps = try container.decodeIfPresent(String.self, forKey: .reps) ?? ""
+        repHint = try container.decodeIfPresent(String.self, forKey: .repHint) ?? ""
+        isSkipped = try container.decodeIfPresent(Bool.self, forKey: .isSkipped) ?? false
     }
 }
 
@@ -533,6 +550,8 @@ struct UnattachedRun: Identifiable, Codable, Equatable {
     var detail: RunDetailData
     var date: Date
     var source: String?
+    /// Import modality when known (e.g. StairMaster from HealthKit). Defaults to road run for legacy rows.
+    var activityType: ActivityType
     var schemaVersion: Int
     var createdAt: Date?
     var updatedAt: Date?
@@ -545,6 +564,7 @@ struct UnattachedRun: Identifiable, Codable, Equatable {
         detail: RunDetailData,
         date: Date,
         source: String? = nil,
+        activityType: ActivityType = .roadRun,
         schemaVersion: Int = WorkoutSchema.currentVersion,
         createdAt: Date? = Date(),
         updatedAt: Date? = Date(),
@@ -556,6 +576,7 @@ struct UnattachedRun: Identifiable, Codable, Equatable {
         self.detail = detail
         self.date = date
         self.source = source
+        self.activityType = activityType
         self.schemaVersion = schemaVersion
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -570,6 +591,7 @@ struct UnattachedRun: Identifiable, Codable, Equatable {
         detail = try container.decode(RunDetailData.self, forKey: .detail)
         date = try container.decode(Date.self, forKey: .date)
         source = try container.decodeIfPresent(String.self, forKey: .source)
+        activityType = try container.decodeIfPresent(ActivityType.self, forKey: .activityType) ?? .roadRun
         schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? WorkoutSchema.currentVersion
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? updatedAt

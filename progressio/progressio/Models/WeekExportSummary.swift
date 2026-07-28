@@ -181,7 +181,7 @@ enum WeekExportSummary {
 
     private static func elevationSummaryLines(for week: WeekPlan) -> [String] {
         let workouts = week.days.flatMap(\.activeWorkouts)
-        let enduranceTypes: [ActivityType] = [.roadRun, .trailRun, .walk, .bike]
+        let enduranceTypes: [ActivityType] = [.roadRun, .trailRun, .walk, .bike, .stairMaster]
         var lines: [String] = []
         for activity in enduranceTypes {
             let matching = workouts.filter { $0.activityType == activity }

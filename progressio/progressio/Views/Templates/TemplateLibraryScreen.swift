@@ -19,6 +19,7 @@ struct TemplateLibraryView: View {
     @State private var newPlannedDistance: String = ""
     @State private var newPlannedDuration: String = ""
     @State private var newPlannedElevation: String = ""
+    @State private var newPlannedLevel: String = "10"
     @State private var newIntensityRPE: String = ""
     @State private var templatePendingDelete: StrengthTemplate?
     @State private var endurancePendingDelete: EnduranceTemplate?
@@ -293,10 +294,11 @@ struct TemplateLibraryView: View {
             viewModel.addEnduranceTemplate(
                 name: newTemplateName,
                 activityType: newActivityType,
-                runType: newActivityType == .bike ? nil : RunType(runCategory: newRunCategory),
-                plannedDistance: Self.trimmedOrNil(newPlannedDistance),
+                runType: newActivityType.usesRunType ? RunType(runCategory: newRunCategory) : nil,
+                plannedDistance: newActivityType.usesDistanceMetric ? Self.trimmedOrNil(newPlannedDistance) : nil,
                 plannedDuration: Self.trimmedOrNil(newPlannedDuration),
                 plannedElevationGain: Self.trimmedOrNil(newPlannedElevation),
+                plannedLevel: newActivityType == .stairMaster ? Self.trimmedOrNil(newPlannedLevel) : nil,
                 description: Self.trimmedOrNil(newTemplateNote),
                 intensityRPE: Self.trimmedOrNil(newIntensityRPE)
             )
@@ -324,6 +326,7 @@ struct TemplateLibraryView: View {
         newPlannedDistance = ""
         newPlannedDuration = ""
         newPlannedElevation = ""
+        newPlannedLevel = "10"
         newIntensityRPE = ""
     }
 
@@ -369,7 +372,7 @@ struct TemplateLibraryView: View {
                             }
                         }
                     }
-                    if newActivityType != .bike {
+                    if newActivityType.usesRunType {
                         Section("Run type") {
                             Picker("Run type", selection: $newRunCategory) {
                                 ForEach(RunCategory.allCases) { cat in
@@ -379,9 +382,20 @@ struct TemplateLibraryView: View {
                         }
                     }
                     Section("Planned values") {
-                        TextField("Distance (optional)", text: $newPlannedDistance)
+                        if newActivityType.usesDistanceMetric {
+                            TextField("Distance (mi, optional)", text: $newPlannedDistance)
+                        }
                         TextField("Duration (optional)", text: $newPlannedDuration)
-                        TextField("Elevation gain (optional)", text: $newPlannedElevation)
+                        TextField(
+                            newActivityType == .stairMaster
+                                ? "Elevation (ft, optional)"
+                                : "Elevation gain (optional)",
+                            text: $newPlannedElevation
+                        )
+                        if newActivityType == .stairMaster {
+                            TextField("Level 1–20 (optional)", text: $newPlannedLevel)
+                                .keyboardType(.numberPad)
+                        }
                         TextField("Intensity RPE (optional)", text: $newIntensityRPE)
                             .keyboardType(.decimalPad)
                     }
@@ -589,6 +603,7 @@ struct TemplateLibraryView: View {
         planned.plannedDistance = template.plannedDistance
         planned.plannedDuration = template.plannedDuration
         planned.plannedElevationGain = template.plannedElevationGain
+        planned.plannedLevel = template.plannedLevel
         planned.plannedDescription = template.description
         planned.plannedIntensityRPE = template.intensityRPE
         planned.plannedRoute = template.route
@@ -990,12 +1005,13 @@ struct EnduranceTemplateDetailView: View {
     @State private var editPlannedDistance: String = ""
     @State private var editPlannedDuration: String = ""
     @State private var editPlannedElevation: String = ""
+    @State private var editPlannedLevel: String = ""
     @State private var editIntensityRPE: String = ""
 
     var body: some View {
         List {
             Section {
-                Label(template.activityType.rawValue, systemImage: template.activityType.sessionKind.systemImage)
+                Label(template.activityType.rawValue, systemImage: template.activityType.systemImage)
                 if let runType = template.runType {
                     Label("Run type: \(runType.rawValue)", systemImage: "tag")
                         .font(.caption)
@@ -1009,7 +1025,12 @@ struct EnduranceTemplateDetailView: View {
                 Section("Planned duration") { Text(duration) }
             }
             if let elevation = template.plannedElevationGain, !elevation.isEmpty {
-                Section("Elevation gain") { Text(elevation) }
+                Section(template.activityType == .stairMaster ? "Elevation (ft)" : "Elevation gain") {
+                    Text(elevation)
+                }
+            }
+            if let level = template.plannedLevel, !level.isEmpty {
+                Section("Level") { Text(level) }
             }
             if let rpe = template.intensityRPE, !rpe.isEmpty {
                 Section("Intensity RPE") { Text(rpe) }
@@ -1035,6 +1056,7 @@ struct EnduranceTemplateDetailView: View {
                 editPlannedDistance: $editPlannedDistance,
                 editPlannedDuration: $editPlannedDuration,
                 editPlannedElevation: $editPlannedElevation,
+                editPlannedLevel: $editPlannedLevel,
                 editIntensityRPE: $editIntensityRPE,
                 isPresented: $showingEdit
             )
@@ -1049,6 +1071,7 @@ struct EnduranceTemplateDetailView: View {
         editPlannedDistance = template.plannedDistance ?? ""
         editPlannedDuration = template.plannedDuration ?? ""
         editPlannedElevation = template.plannedElevationGain ?? ""
+        editPlannedLevel = template.plannedLevel ?? ""
         editIntensityRPE = template.intensityRPE ?? ""
         showingEdit = true
     }
@@ -1064,6 +1087,7 @@ private struct EnduranceTemplateEditSheet: View {
     @Binding var editPlannedDistance: String
     @Binding var editPlannedDuration: String
     @Binding var editPlannedElevation: String
+    @Binding var editPlannedLevel: String
     @Binding var editIntensityRPE: String
     @Binding var isPresented: Bool
 
@@ -1082,7 +1106,7 @@ private struct EnduranceTemplateEditSheet: View {
                         }
                     }
                 }
-                if editActivityType != .bike {
+                if editActivityType.usesRunType {
                     Section("Run type") {
                         Picker("Run type", selection: $editRunCategory) {
                             ForEach(RunCategory.allCases) { cat in
@@ -1092,9 +1116,20 @@ private struct EnduranceTemplateEditSheet: View {
                     }
                 }
                 Section("Planned values") {
-                    TextField("Distance (optional)", text: $editPlannedDistance)
+                    if editActivityType.usesDistanceMetric {
+                        TextField("Distance (mi, optional)", text: $editPlannedDistance)
+                    }
                     TextField("Duration (optional)", text: $editPlannedDuration)
-                    TextField("Elevation gain (optional)", text: $editPlannedElevation)
+                    TextField(
+                        editActivityType == .stairMaster
+                            ? "Elevation (ft, optional)"
+                            : "Elevation gain (optional)",
+                        text: $editPlannedElevation
+                    )
+                    if editActivityType == .stairMaster {
+                        TextField("Level 1–20 (optional)", text: $editPlannedLevel)
+                            .keyboardType(.numberPad)
+                    }
                     TextField("Intensity RPE (optional)", text: $editIntensityRPE)
                         .keyboardType(.decimalPad)
                 }
@@ -1118,10 +1153,11 @@ private struct EnduranceTemplateEditSheet: View {
         updated.name = editName.trimmingCharacters(in: .whitespacesAndNewlines)
         updated.description = trimmedOrNil(editDescription)
         updated.activityType = editActivityType
-        updated.runType = editActivityType == .bike ? nil : RunType(runCategory: editRunCategory)
-        updated.plannedDistance = trimmedOrNil(editPlannedDistance)
+        updated.runType = editActivityType.usesRunType ? RunType(runCategory: editRunCategory) : nil
+        updated.plannedDistance = editActivityType.usesDistanceMetric ? trimmedOrNil(editPlannedDistance) : nil
         updated.plannedDuration = trimmedOrNil(editPlannedDuration)
         updated.plannedElevationGain = trimmedOrNil(editPlannedElevation)
+        updated.plannedLevel = editActivityType == .stairMaster ? trimmedOrNil(editPlannedLevel) : nil
         updated.intensityRPE = trimmedOrNil(editIntensityRPE)
         viewModel.updateEnduranceTemplate(updated)
         isPresented = false

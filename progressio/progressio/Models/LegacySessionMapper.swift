@@ -230,7 +230,8 @@ enum LegacySessionMapper {
                         repHint: emptyToNil(set.repHint),
                         actualReps: emptyToNil(set.reps),
                         actualWeight: emptyToNil(set.weight),
-                        notes: nil
+                        notes: nil,
+                        isSkipped: set.isSkipped
                     )
                 },
                 muscleGroup: nil,
@@ -255,7 +256,8 @@ enum LegacySessionMapper {
                         id: set.id,
                         weight: set.actualWeight ?? (set.targetWeight.map { String(Int($0)) } ?? ""),
                         reps: set.actualReps ?? "",
-                        repHint: set.repHint ?? set.targetReps.map(String.init) ?? ""
+                        repHint: set.repHint ?? set.targetReps.map(String.init) ?? "",
+                        isSkipped: set.isSkipped
                     )
                 },
                 rpe: exercise.exerciseRPE ?? ""

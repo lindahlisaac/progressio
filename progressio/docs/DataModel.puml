@@ -78,6 +78,7 @@ package "Week calendar **CloudKit: WeekPlan**" {
     plannedDistance : String?
     plannedDuration : String?
     plannedElevationGain : String?
+    plannedLevel : String?
     plannedIntensityRPE : String?
     plannedDescription : String?
     plannedRoute : String?
@@ -87,6 +88,7 @@ package "Week calendar **CloudKit: WeekPlan**" {
     completedDistance : String?
     completedDuration : String?
     completedElevationGain : String?
+    completedLevel : String?
     completedIntensityRPE : String?
     completedCalories : String?
     completedHeartRateAverage : String?
@@ -117,6 +119,7 @@ package "Week calendar **CloudKit: WeekPlan**" {
     actualReps : String?
     actualWeight : String?
     notes : String?
+    isSkipped : Bool
   }
 
   WeekPlan "1" *-- "7" DayPlan : days
@@ -438,6 +441,7 @@ package "Enums (selected)" {
     trailRun
     walk
     bike
+    stairMaster
     strength
   }
   enum WorkoutStatus {

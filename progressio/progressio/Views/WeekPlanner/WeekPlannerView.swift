@@ -3,6 +3,7 @@ import SwiftUI
 struct WeekPlannerView: View {
     @ObservedObject var viewModel: WeekPlannerViewModel
     @ObservedObject var templatesViewModel: TemplateLibraryViewModel
+    @EnvironmentObject private var metricPreferences: ActivityMetricPreferenceStore
     @State private var templatePickerContext: TemplatePickerContext?
     @State private var previousUnattachedCount: Int = 0
     @State private var showingUnattachedSheet = false
@@ -187,7 +188,8 @@ struct WeekPlannerView: View {
     }
 
     private var weeklyTotalsSection: some View {
-        let totals = WeekTotals.modalityTotals(for: viewModel.weekPlan)
+        let _ = metricPreferences.revision
+        let totals = WeekTotals.modalityTotals(for: viewModel.weekPlan, preferences: metricPreferences)
         return Section {
             if totals.isEmpty {
                 Text("No workouts this week")
@@ -424,6 +426,33 @@ struct WeekPlannerView: View {
                     viewModel.setWorkoutTimePeriod(workoutID: workout.id, timePeriod: period)
                 }
             )
+        } else if workout.activityType == .stairMaster {
+            StairMasterDetailView(
+                workout: workout,
+                onSave: { title, plannedDuration, plannedElevation, plannedLevel, status, actualDuration, actualElevation, actualLevel, timePeriod, notes in
+                    let wasComplete = workout.status == .completed || workout.status == .partiallyCompleted
+                    viewModel.updateEnduranceWorkout(
+                        workoutID: workout.id,
+                        title: title,
+                        runType: nil,
+                        plannedDistance: "",
+                        plannedDuration: plannedDuration,
+                        plannedElevation: plannedElevation,
+                        plannedLevel: plannedLevel,
+                        status: status,
+                        actualDistance: nil,
+                        actualDuration: actualDuration,
+                        actualElevation: actualElevation,
+                        actualLevel: actualLevel,
+                        timePeriod: timePeriod,
+                        activityType: .stairMaster,
+                        notes: notes
+                    )
+                    if status == .completed, !wasComplete {
+                        requestActivityReflection(for: workout.id)
+                    }
+                }
+            )
         } else if workout.activityType.sessionKind == .run {
             RunDetailView(
                 workout: workout,
@@ -614,7 +643,7 @@ struct WorkoutRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: workout.activityType.systemImage)
-                .foregroundStyle(color(for: workout.sessionKind))
+                .foregroundStyle(color(for: workout.activityType))
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
@@ -680,7 +709,41 @@ struct WorkoutRow: View {
 
     @ViewBuilder
     private var enduranceSummary: some View {
-        if workout.activityType.sessionKind == .run || workout.activityType == .bike {
+        if workout.activityType == .stairMaster {
+            if workout.hasCompletedEnduranceDetail {
+                if !workout.actualDuration.isEmpty {
+                    Text("Actual \(workout.actualDuration)")
+                        .font(.caption)
+                        .foregroundStyle(.primary)
+                }
+                if !workout.actualLevel.isEmpty {
+                    Text("Level \(workout.actualLevel)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if !workout.actualElevation.isEmpty {
+                    Text("\(workout.actualElevation) ft")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else if workout.hasPlannedEnduranceDetail {
+                if !workout.plannedDuration.isEmpty {
+                    Text(workout.plannedDuration)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if !workout.plannedLevel.isEmpty {
+                    Text("Level \(workout.plannedLevel)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if !workout.plannedElevation.isEmpty {
+                    Text("\(workout.plannedElevation) ft")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } else if workout.activityType.sessionKind == .run || workout.activityType == .bike {
             if workout.hasCompletedEnduranceDetail {
                 if !workout.actualDistance.isEmpty {
                     Text("Actual \(workout.actualDistance) mi")
@@ -731,14 +794,16 @@ struct WorkoutRow: View {
     }
 }
 
-private func color(for kind: SessionKind) -> Color {
-    switch kind {
+private func color(for activityType: ActivityType) -> Color {
+    switch activityType {
     case .strength:
         return .blue
-    case .run:
+    case .roadRun, .trailRun, .walk:
         return .purple
-    case .cycle:
+    case .bike:
         return .orange
+    case .stairMaster:
+        return .teal
     }
 }
 

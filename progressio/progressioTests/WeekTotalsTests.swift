@@ -88,6 +88,40 @@ final class WeekTotalsTests: XCTestCase {
         XCTAssertEqual(total.completedAmount, 0, accuracy: 0.001)
     }
 
+    func testStairMasterRollsUpByTimeWithElevationCaption() {
+        var stairs = Workout.manual(activityType: .stairMaster, plannedDate: Date(), title: "Stairs")
+        stairs.plannedValues.plannedDuration = "00:30:00"
+        stairs.plannedValues.plannedElevationGain = "500"
+        stairs.plannedValues.plannedLevel = "12"
+        stairs.completedValues.completedDuration = "00:28:00"
+        stairs.status = .completed
+
+        let plan = week(with: [0: [stairs]])
+        let total = WeekTotals.modalityTotals(for: plan)[0]
+        XCTAssertEqual(total.activityType, .stairMaster)
+        XCTAssertEqual(total.unitLabel, "hr")
+        XCTAssertEqual(total.plannedAmount, 0.5, accuracy: 0.001)
+        XCTAssertEqual(total.completedAmount, 28.0 / 60.0, accuracy: 0.001)
+        XCTAssertEqual(total.plannedElevation, 500, accuracy: 0.001)
+    }
+
+    func testPrimaryMetricPreferenceOverridesWeekTotals() {
+        var run = Workout.manual(activityType: .roadRun, plannedDate: Date(), title: "Easy")
+        run.plannedValues.plannedDistance = "5"
+        run.plannedValues.plannedDuration = "01:00:00"
+        run.status = .planned
+
+        let defaults = UserDefaults(suiteName: "WeekTotalsTests.\(UUID().uuidString)")!
+        let prefs = ActivityMetricPreferenceStore(defaults: defaults)
+        prefs.setPrimaryMetric(.duration, for: .roadRun)
+
+        let plan = week(with: [0: [run]])
+        let total = WeekTotals.modalityTotals(for: plan, preferences: prefs)[0]
+        XCTAssertEqual(total.unitLabel, "hr")
+        XCTAssertEqual(total.plannedAmount, 1.0, accuracy: 0.001)
+        XCTAssertEqual(total.primaryMetric, .duration)
+    }
+
     func testDurationHoursParsing() {
         XCTAssertEqual(WeekTotals.durationHours(from: "01:30:00"), 1.5, accuracy: 0.001)
         XCTAssertEqual(WeekTotals.durationHours(from: "30:00"), 0.5, accuracy: 0.001)

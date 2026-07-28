@@ -259,6 +259,7 @@ enum StrengthHistoryLookup {
             let sets: [(weight: String, reps: String)] = exercise.targetSets
                 .sorted { $0.setNumber < $1.setNumber }
                 .compactMap { set in
+                    if set.isSkipped { return nil }
                     let w = set.actualWeight?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                     let r = set.actualReps?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                     if w.isEmpty, r.isEmpty { return nil }

@@ -40,6 +40,7 @@ struct WeeklyTemplateWorkoutEntry: Identifiable, Codable, Equatable {
             switch activityType {
             case .strength: return "Strength session"
             case .bike: return "Planned bike"
+            case .stairMaster: return "Planned StairMaster"
             case .roadRun, .trailRun, .walk: return "Planned \(activityType.rawValue.lowercased())"
             }
         }()

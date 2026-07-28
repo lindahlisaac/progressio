@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @ObservedObject var weekViewModel: WeekPlannerViewModel
+    @EnvironmentObject private var metricPreferences: ActivityMetricPreferenceStore
     @State private var isImporting = false
     @State private var importMessage: String?
     @State private var exportURL: URL?
@@ -36,6 +37,20 @@ struct SettingsView: View {
 
     var body: some View {
         List {
+            Section {
+                ForEach(ActivityMetricPreferenceStore.enduranceTypes) { activity in
+                    Picker(activity.rawValue, selection: preferenceBinding(for: activity)) {
+                        ForEach(ActivityMetricPreferenceStore.allowedMetrics(for: activity)) { metric in
+                            Text(metric.settingsLabel).tag(metric)
+                        }
+                    }
+                }
+            } header: {
+                Text("Primary metrics")
+            } footer: {
+                Text("Controls the Plan week summary for each activity and the default entry mode when logging. Change anytime; updates apply on next Plan render.")
+            }
+
             Section {
                 Button {
                     HealthKitImportService.shared.requestAuthorization { success, error in
@@ -199,6 +214,13 @@ struct SettingsView: View {
         }
     }
 
+    private func preferenceBinding(for activity: ActivityType) -> Binding<PrimaryMetric> {
+        Binding(
+            get: { metricPreferences.primaryMetric(for: activity) },
+            set: { metricPreferences.setPrimaryMetric($0, for: activity) }
+        )
+    }
+
     private static let dateTimeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
@@ -209,4 +231,5 @@ struct SettingsView: View {
 
 #Preview {
     SettingsView(weekViewModel: WeekPlannerViewModel(templates: TemplateLibraryViewModel.makeSamples()))
+        .environmentObject(ActivityMetricPreferenceStore.shared)
 }

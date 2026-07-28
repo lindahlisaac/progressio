@@ -30,6 +30,8 @@ struct StrengthLogView: View {
     @State private var persistWorkItem: DispatchWorkItem?
     @State private var noteWorkItem: DispatchWorkItem?
     @State private var titleWorkItem: DispatchWorkItem?
+    /// Last weight copied from the first fillable set — later sets matching this (or empty) stay in sync while typing.
+    @State private var lastAutofilledWeightByExercise: [UUID: String] = [:]
 
     init(
         workout: Workout,
@@ -193,8 +195,21 @@ struct StrengthLogView: View {
                             set: $set,
                             isInputFocused: $isInputFocused,
                             onChanged: persistState,
+                            onWeightEdited: {
+                                autofillWeight(from: set.id, in: exercise.id)
+                            },
                             isLocked: isLocked
                         )
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            if !isLocked {
+                                Button {
+                                    toggleSkip(setID: set.id, in: exercise.id)
+                                } label: {
+                                    Label(set.isSkipped ? "Unskip" : "Skip", systemImage: set.isSkipped ? "arrow.uturn.backward" : "forward.fill")
+                                }
+                                .tint(set.isSkipped ? .blue : .orange)
+                            }
+                        }
                     }
                     .onDelete { indexSet in
                         guard !isLocked else { return }
@@ -290,6 +305,7 @@ struct StrengthLogView: View {
         .onAppear {
             reloadStateIfAvailable()
             refreshPriorComparison()
+            seedAutofillWeights()
         }
         .onChange(of: exercises.map(\.name)) { _ in
             refreshPriorComparison()
@@ -382,7 +398,65 @@ struct StrengthLogView: View {
 
     private func addSet(to exerciseID: UUID) {
         guard let idx = exercises.firstIndex(where: { $0.id == exerciseID }) else { return }
-        exercises[idx].sets.append(SetLog(weight: "", reps: "", repHint: ""))
+        let fillWeight = exercises[idx].sets
+            .first(where: { !$0.isSkipped && !$0.weight.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })?
+            .weight ?? ""
+        let hint = exercises[idx].sets.last?.repHint ?? ""
+        exercises[idx].sets.append(SetLog(weight: fillWeight, reps: "", repHint: hint))
+        persistState()
+    }
+
+    /// Copies weight from the first non-skipped set into later empty / previously autofilled sets.
+    /// Tracks the last seed so typing `1` → `13` → `135` updates followers instead of locking them at `1`.
+    private func autofillWeight(from setID: UUID, in exerciseID: UUID) {
+        guard let exerciseIndex = exercises.firstIndex(where: { $0.id == exerciseID }) else { return }
+        let sets = exercises[exerciseIndex].sets
+        guard let sourceIndex = sets.firstIndex(where: { $0.id == setID }),
+              let firstFillable = sets.firstIndex(where: { !$0.isSkipped }),
+              sourceIndex == firstFillable
+        else { return }
+
+        let weight = sets[sourceIndex].weight.trimmingCharacters(in: .whitespacesAndNewlines)
+        let previousSeed = lastAutofilledWeightByExercise[exerciseID] ?? ""
+
+        var changed = false
+        for index in (sourceIndex + 1)..<sets.count {
+            var set = exercises[exerciseIndex].sets[index]
+            guard !set.isSkipped else { continue }
+            let existing = set.weight.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard StrengthWeightAutofill.shouldUpdate(existing: existing, previousSeed: previousSeed) else { continue }
+            guard existing != weight else { continue }
+            set.weight = weight
+            exercises[exerciseIndex].sets[index] = set
+            changed = true
+        }
+        lastAutofilledWeightByExercise[exerciseID] = weight
+        if changed { persistState() }
+    }
+
+    private func seedAutofillWeights() {
+        var seeds: [UUID: String] = [:]
+        for exercise in exercises {
+            guard let first = exercise.sets.first(where: { !$0.isSkipped }) else { continue }
+            seeds[exercise.id] = first.weight.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        lastAutofilledWeightByExercise = seeds
+    }
+
+    private func toggleSkip(setID: UUID, in exerciseID: UUID) {
+        guard let exerciseIndex = exercises.firstIndex(where: { $0.id == exerciseID }),
+              let setIndex = exercises[exerciseIndex].sets.firstIndex(where: { $0.id == setID })
+        else { return }
+        exercises[exerciseIndex].sets[setIndex].isSkipped.toggle()
+        if exercises[exerciseIndex].sets[setIndex].isSkipped {
+            // Skipped sets stay in structure but are not "empty incomplete" logging targets.
+            exercises[exerciseIndex].sets[setIndex].weight = ""
+            exercises[exerciseIndex].sets[setIndex].reps = ""
+        } else if let source = exercises[exerciseIndex].sets.first(where: {
+            !$0.isSkipped && !$0.weight.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }) {
+            autofillWeight(from: source.id, in: exerciseID)
+        }
         persistState()
     }
 
@@ -436,6 +510,7 @@ struct StrengthLogView: View {
         exercises = initialExercises
         isCompleted = false
         isLocked = false
+        seedAutofillWeights()
         persistState()
     }
 
@@ -587,16 +662,32 @@ private struct PriorStrengthSessionSheet: View {
     }
 }
 
+/// Pure rules for progressive weight autofill while typing into set 1.
+enum StrengthWeightAutofill {
+    /// Update empty followers, or followers still equal to the last autofilled seed (so `1`→`135` keeps pace).
+    static func shouldUpdate(existing: String, previousSeed: String) -> Bool {
+        let trimmed = existing.trimmingCharacters(in: .whitespacesAndNewlines)
+        let seed = previousSeed.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty || trimmed == seed
+    }
+}
+
 private struct SetRow: View {
     @Binding var set: SetLog
     var isInputFocused: FocusState<Bool>.Binding
     var onChanged: () -> Void
+    var onWeightEdited: () -> Void
     var isLocked: Bool
 
     @State private var repSelection: Int = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            if set.isSkipped {
+                Label("Skipped", systemImage: "forward.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.orange)
+            }
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Weight")
@@ -607,11 +698,14 @@ private struct SetRow: View {
                             .keyboardType(.decimalPad)
                             .textFieldStyle(.roundedBorder)
                             .focused(isInputFocused)
-                            .onChange(of: set.weight) { _ in onChanged() }
+                            .onChange(of: set.weight) { _ in
+                                onChanged()
+                                onWeightEdited()
+                            }
                         Text("lb")
                             .foregroundStyle(.secondary)
                     }
-                    .disabled(isLocked)
+                    .disabled(isLocked || set.isSkipped)
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -631,7 +725,7 @@ private struct SetRow: View {
                             set.reps = "\(newValue)"
                             onChanged()
                         }
-                        .disabled(isLocked)
+                        .disabled(isLocked || set.isSkipped)
 
                         Spacer()
 
@@ -643,14 +737,20 @@ private struct SetRow: View {
                     }
                 }
             }
+            .opacity(set.isSkipped ? 0.45 : 1)
         }
         .onAppear {
-            if let current = Int(set.reps) {
+            if let current = Int(set.reps.trimmingCharacters(in: .whitespacesAndNewlines)),
+               !set.reps.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 repSelection = max(0, min(99, current))
+            } else if let midpoint = TemplateSnapshot.midpointReps(from: set.repHint) {
+                // Highlight planned midpoint without writing until the user confirms a pick.
+                repSelection = midpoint
             } else {
                 repSelection = 0
             }
         }
         .padding(.vertical, 4)
+        .listRowBackground(set.isSkipped ? Color.orange.opacity(0.08) : nil)
     }
 }

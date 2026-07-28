@@ -16,17 +16,19 @@ extension Workout {
     var actualElevation: String { completedValues.completedElevationGain ?? "" }
     var plannedDuration: String { plannedValues.plannedDuration ?? "" }
     var actualDuration: String { completedValues.completedDuration ?? "" }
+    var plannedLevel: String { plannedValues.plannedLevel ?? "" }
+    var actualLevel: String { completedValues.completedLevel ?? "" }
 
     var hasPlannedEnduranceDetail: Bool {
         activityType != .strength
             && (!plannedDistance.isEmpty || !plannedDuration.isEmpty || !plannedElevation.isEmpty
-                || runType != nil)
+                || !plannedLevel.isEmpty || runType != nil)
     }
 
     var hasCompletedEnduranceDetail: Bool {
         activityType != .strength
             && (!actualDistance.isEmpty || !actualDuration.isEmpty || !actualElevation.isEmpty
-                || linkedHealthKitUUID != nil)
+                || !actualLevel.isEmpty || linkedHealthKitUUID != nil)
     }
 
     static func strength(
@@ -126,6 +128,7 @@ extension Workout {
         planned.plannedDistance = template.plannedDistance
         planned.plannedDuration = template.plannedDuration
         planned.plannedElevationGain = template.plannedElevationGain
+        planned.plannedLevel = template.plannedLevel
         planned.plannedDescription = template.description
         planned.plannedIntensityRPE = template.intensityRPE
         planned.plannedRoute = template.route
@@ -190,9 +193,11 @@ enum WorkoutEditing {
         plannedDistance: String,
         plannedDuration: String,
         plannedElevation: String,
+        plannedLevel: String? = nil,
         actualDistance: String?,
         actualDuration: String?,
         actualElevation: String?,
+        actualLevel: String? = nil,
         status: WorkoutStatus,
         timePeriod: TimePeriod? = nil,
         activityType: ActivityType? = nil,
@@ -203,12 +208,15 @@ enum WorkoutEditing {
         if let timePeriod {
             workout.timePeriod = timePeriod
         }
-        if let activityType, activityType.sessionKind == .run {
+        if let activityType, activityType.sessionKind == .run || activityType == .stairMaster {
             workout.activityType = activityType
         }
         workout.plannedValues.plannedDistance = emptyToNil(plannedDistance)
         workout.plannedValues.plannedDuration = emptyToNil(plannedDuration)
         workout.plannedValues.plannedElevationGain = emptyToNil(plannedElevation)
+        if let plannedLevel {
+            workout.plannedValues.plannedLevel = emptyToNil(plannedLevel)
+        }
         workout.status = status
         if let notes {
             workout.notes = emptyToNil(notes)
@@ -223,6 +231,9 @@ enum WorkoutEditing {
         }
         if let actualElevation {
             workout.completedValues.completedElevationGain = emptyToNil(actualElevation)
+        }
+        if let actualLevel {
+            workout.completedValues.completedLevel = emptyToNil(actualLevel)
         }
 
         if status == .completed, workout.completedValues.completedAt == nil {

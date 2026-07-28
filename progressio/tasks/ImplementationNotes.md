@@ -595,22 +595,47 @@ Next work is product polish / App Store submission QA per Task 027 checklist (ma
 - **`StrengthLogPersistence`** — migration/legacy only; launch runs a safe orphan-file sweep (delete when snapshot exists or no matching workout).
 - **`ExerciseLog` / `SetLog`** — remain UI editing types for `StrengthLogView`; `StrengthLogState` / `PlannedSession` are decode bridges only.
 
+### Task 032 — StairMaster Activity Type
+
+- **`ActivityType.stairMaster`** — planner add + endurance templates; detail UI focuses on time, elevation (ft), level 1–20 (`plannedLevel` / `completedLevel`).
+- **Week totals** — StairMaster rolls up by **hours**; elevation caption when present (primary-metric prefs are Task 033).
+- **HealthKit** — discovery includes `.stairClimbing` and `.stairs` → `ActivityType.stairMaster` into Unattached (with `UnattachedRun.activityType`). Running still maps to road run. Level is not available from HK; duration (+ optional flights→ft estimate) is imported.
+
+### Task 033 — Primary Metric Preferences
+
+- **Settings → Primary metrics** — per endurance activity (`UserDefaults`, not CloudKit).
+- **Defaults:** Road/Trail/Walk → distance; Bike → time; StairMaster → time. StairMaster options: time / elevation / level.
+- **Week totals** — roll up by the chosen metric; elevation caption only when elevation is not primary.
+- **Detail defaults** — Run/Ride open on Miles vs Time from preference; elevation preference focuses the elevation field. StairMaster focuses elevation when that is primary.
+
+### Task 034 — Strength Set UX Polish
+
+- **`StrengthSetSnapshot.isSkipped`** / **`SetLog.isSkipped`** — decode missing as false; round-trips via completed snapshot on the week plan.
+- **Weight autofill** — entering weight on the first non-skipped set copies into later empty, non-skipped sets only (never overwrites typed weights). New sets inherit that weight when present.
+- **Skip set** — swipe leading Skip/Unskip; skipped rows styled and excluded from prior-history lift sets; still kept in planned set structure.
+- **Reps midpoint** — menu picker highlights midpoint of `repHint` (`8-12` → 10) when reps are empty; does not auto-write until the user picks.
+
 ---
 
 ## Source File Index
 
 ```
 progressio/progressio/
+├── Models/ActivityMetricPreferences.swift
 ├── Models/ReflectionModels.swift
+├── Models/TemplateSnapshot.swift
 ├── Services/ReflectionFileStores.swift
 ├── ViewModels/WeekPlannerViewModel+Reflections.swift
 ├── Views/WeekPlanner/ActivityReflectionSheet.swift
 ├── Views/WeekPlanner/WeeklyReflectionSheet.swift
+├── Views/WeekPlanner/StairMasterDetailView.swift
+├── Views/WeekPlanner/StrengthLogView.swift
 └── … (stores, migration through v7; strength files migration-only)
 progressio/progressioTests/ReflectionLogicTests.swift
+progressio/progressioTests/StrengthSetUXTests.swift
 progressio/docs/DataModel.puml
 ```
 
 ---
 
-*Last updated: Task 031 Single Strength Path on WeekPlan.*
+*Last updated: Task 034 Strength Set UX Polish.*

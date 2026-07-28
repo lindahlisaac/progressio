@@ -101,7 +101,10 @@ Supported values:
 - Trail Run
 - Walk
 - Bike
+- StairMaster
 - Strength
+
+StairMaster planned/completed metrics emphasize **duration**, **elevation (ft)**, and **machine level (1–20)** via `plannedLevel` / `completedLevel` (not miles).
 
 ## Run Type
 
@@ -145,6 +148,7 @@ Possible planned fields:
 - plannedIntensityRPE
 - plannedDescription
 - plannedRoute optional
+- plannedLevel optional (StairMaster 1–20)
 - plannedStrengthRoutineSnapshot optional
 
 ## Completed Values
@@ -159,6 +163,7 @@ Possible completed fields:
 - completedHeartRateAverage optional
 - completedHeartRateMax optional
 - completedDescription
+- completedLevel optional (StairMaster 1–20)
 - completedStrengthRoutineSnapshot optional
 - completedAt
 
@@ -231,6 +236,9 @@ Fields:
 - actualReps
 - actualWeight optional
 - notes optional
+- **isSkipped** (Bool, default false) — explicit skip, distinct from empty/not logged. Older snapshots without the key decode as not skipped.
+
+Canonical live shape is `StrengthSetSnapshot` inside planned/completed routine snapshots on the workout (see `DataModel.puml`).
 
 ## Endurance Template
 

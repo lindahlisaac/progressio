@@ -75,6 +75,7 @@ final class TemplateLibraryViewModel: ObservableObject {
         plannedDistance: String? = nil,
         plannedDuration: String? = nil,
         plannedElevationGain: String? = nil,
+        plannedLevel: String? = nil,
         description: String? = nil,
         intensityRPE: String? = nil,
         route: String? = nil
@@ -85,10 +86,11 @@ final class TemplateLibraryViewModel: ObservableObject {
         var newTemplate = EnduranceTemplate(
             name: trimmedName,
             activityType: activityType,
-            runType: activityType == .bike ? nil : runType,
+            runType: activityType.usesRunType ? runType : nil,
             plannedDistance: plannedDistance,
             plannedDuration: plannedDuration,
             plannedElevationGain: plannedElevationGain,
+            plannedLevel: plannedLevel,
             description: description,
             intensityRPE: intensityRPE,
             route: route

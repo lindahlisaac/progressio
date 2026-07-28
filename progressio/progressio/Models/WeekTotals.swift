@@ -6,8 +6,9 @@ struct WeekModalityTotal: Identifiable, Equatable {
     var plannedAmount: Double
     var completedAmount: Double
     var unitLabel: String
-    /// Sum of planned elevation gain (ft) for this modality; 0 when none entered.
+    /// Sum of planned elevation gain (ft) for this modality; 0 when none / when elevation is primary.
     var plannedElevation: Double = 0
+    var primaryMetric: PrimaryMetric?
 
     var id: String { activityType.rawValue }
 
@@ -24,6 +25,12 @@ struct WeekModalityTotal: Identifiable, Equatable {
     private func format(_ value: Double) -> String {
         if activityType == .strength {
             return String(Int(value.rounded()))
+        }
+        if primaryMetric == .level {
+            if value == value.rounded() {
+                return String(Int(value.rounded()))
+            }
+            return String(format: "%.1f", value)
         }
         if value == value.rounded() {
             return String(Int(value.rounded()))
@@ -42,7 +49,10 @@ struct WeekModalityTotal: Identifiable, Equatable {
 enum WeekTotals {
 
     /// Builds one row per activity type present among active (non-deleted) workouts.
-    static func modalityTotals(for week: WeekPlan) -> [WeekModalityTotal] {
+    static func modalityTotals(
+        for week: WeekPlan,
+        preferences: ActivityMetricPreferenceStore = .shared
+    ) -> [WeekModalityTotal] {
         let workouts = week.days.flatMap(\.activeWorkouts)
         guard !workouts.isEmpty else { return [] }
 
@@ -67,37 +77,70 @@ enum WeekTotals {
                 continue
             }
 
-            let useDuration = activity == .bike && matching.allSatisfy {
-                miles(from: $0.plannedDistance) == 0 && miles(from: $0.actualDistance) == 0
-            }
-
+            let metric = preferences.primaryMetric(for: activity)
             var planned = 0.0
             var completed = 0.0
-            var plannedElevation = 0.0
+            var plannedElevationSum = 0.0
+            var plannedLevelSum = 0.0
+            var plannedLevelCount = 0
+            var completedLevelSum = 0.0
+            var completedLevelCount = 0
+
             for workout in matching {
-                plannedElevation += miles(from: workout.plannedElevation)
-                if useDuration {
-                    planned += durationHours(from: workout.plannedDuration)
-                    if workout.status == .completed || workout.status == .partiallyCompleted {
-                        let actual = durationHours(from: workout.actualDuration)
-                        completed += actual > 0 ? actual : durationHours(from: workout.plannedDuration)
-                    }
-                } else {
+                let elev = miles(from: workout.plannedElevation)
+                plannedElevationSum += elev
+
+                switch metric {
+                case .distance:
                     planned += miles(from: workout.plannedDistance)
                     if workout.status == .completed || workout.status == .partiallyCompleted {
                         let actual = miles(from: workout.actualDistance)
                         completed += actual > 0 ? actual : miles(from: workout.plannedDistance)
                     }
+                case .duration:
+                    planned += durationHours(from: workout.plannedDuration)
+                    if workout.status == .completed || workout.status == .partiallyCompleted {
+                        let actual = durationHours(from: workout.actualDuration)
+                        completed += actual > 0 ? actual : durationHours(from: workout.plannedDuration)
+                    }
+                case .elevation:
+                    planned += elev
+                    if workout.status == .completed || workout.status == .partiallyCompleted {
+                        let actual = miles(from: workout.actualElevation)
+                        completed += actual > 0 ? actual : elev
+                    }
+                case .level:
+                    let pLevel = miles(from: workout.plannedLevel)
+                    if pLevel > 0 {
+                        plannedLevelSum += pLevel
+                        plannedLevelCount += 1
+                    }
+                    if workout.status == .completed || workout.status == .partiallyCompleted {
+                        let aLevel = miles(from: workout.actualLevel)
+                        let use = aLevel > 0 ? aLevel : pLevel
+                        if use > 0 {
+                            completedLevelSum += use
+                            completedLevelCount += 1
+                        }
+                    }
                 }
             }
+
+            if metric == .level {
+                planned = plannedLevelCount > 0 ? plannedLevelSum / Double(plannedLevelCount) : 0
+                completed = completedLevelCount > 0 ? completedLevelSum / Double(completedLevelCount) : 0
+            }
+
+            let captionElevation = metric == .elevation ? 0 : plannedElevationSum
 
             results.append(
                 WeekModalityTotal(
                     activityType: activity,
                     plannedAmount: planned,
                     completedAmount: completed,
-                    unitLabel: useDuration ? "hr" : "mi",
-                    plannedElevation: plannedElevation
+                    unitLabel: metric.weekUnitLabel,
+                    plannedElevation: captionElevation,
+                    primaryMetric: metric
                 )
             )
         }

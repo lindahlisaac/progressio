@@ -127,7 +127,8 @@ enum TemplateAndStrengthLogMigration {
                         targetWeight: parseDouble(from: set.weight),
                         repHint: set.repHint.isEmpty ? nil : set.repHint,
                         actualReps: set.reps.isEmpty ? nil : set.reps,
-                        actualWeight: set.weight.isEmpty ? nil : set.weight
+                        actualWeight: set.weight.isEmpty ? nil : set.weight,
+                        isSkipped: set.isSkipped
                     )
                 },
                 exerciseRPE: exercise.rpe.isEmpty ? nil : exercise.rpe

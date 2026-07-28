@@ -93,6 +93,6 @@ struct HealthKitImportCandidate: Equatable, Identifiable {
     let sourceName: String?
 
     var unattachedRun: UnattachedRun {
-        UnattachedRun(detail: detail, date: startDate, source: sourceName)
+        UnattachedRun(detail: detail, date: startDate, source: sourceName, activityType: activityType)
     }
 }

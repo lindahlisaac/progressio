@@ -42,7 +42,7 @@ struct RideDetailView: View {
         _actualHours = State(initialValue: ah)
         _actualMinutes = State(initialValue: am)
         _actualSeconds = State(initialValue: as_)
-        _effortUnit = State(initialValue: .miles)
+        _effortUnit = State(initialValue: Self.effortUnit(for: ActivityMetricPreferenceStore.shared.primaryMetric(for: .bike)))
         _isCompleted = State(initialValue: workout.status == .completed || workout.status == .partiallyCompleted)
         _category = State(initialValue: workout.runType?.runCategory ?? .easy)
         _timePeriod = State(initialValue: workout.timePeriod)
@@ -161,6 +161,18 @@ struct RideDetailView: View {
         }
         .onChange(of: isCompleted) { _ in
             save(statusOverride: isCompleted ? .completed : .planned, dismissAfter: false)
+        }
+        .onAppear {
+            if ActivityMetricPreferenceStore.shared.primaryMetric(for: .bike) == .elevation {
+                focusedField = isCompleted ? .actualElevation : .plannedElevation
+            }
+        }
+    }
+
+    private static func effortUnit(for metric: PrimaryMetric) -> EffortUnit {
+        switch metric {
+        case .duration: return .time
+        case .distance, .elevation, .level: return .miles
         }
     }
 

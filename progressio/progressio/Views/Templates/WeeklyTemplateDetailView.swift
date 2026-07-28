@@ -222,6 +222,7 @@ struct WeeklyTemplateDetailView: View {
         planned.plannedDistance = template.plannedDistance
         planned.plannedDuration = template.plannedDuration
         planned.plannedElevationGain = template.plannedElevationGain
+        planned.plannedLevel = template.plannedLevel
         planned.plannedDescription = template.description
         planned.plannedIntensityRPE = template.intensityRPE
         planned.plannedRoute = template.route

@@ -470,10 +470,12 @@ final class WeekPlannerViewModel: ObservableObject {
         plannedDistance: String,
         plannedDuration: String,
         plannedElevation: String,
+        plannedLevel: String? = nil,
         status: WorkoutStatus,
         actualDistance: String? = nil,
         actualDuration: String? = nil,
         actualElevation: String? = nil,
+        actualLevel: String? = nil,
         timePeriod: TimePeriod? = nil,
         activityType: ActivityType? = nil,
         notes: String? = nil
@@ -487,9 +489,11 @@ final class WeekPlannerViewModel: ObservableObject {
                     plannedDistance: plannedDistance,
                     plannedDuration: plannedDuration,
                     plannedElevation: plannedElevation,
+                    plannedLevel: plannedLevel,
                     actualDistance: actualDistance,
                     actualDuration: actualDuration,
                     actualElevation: actualElevation,
+                    actualLevel: actualLevel,
                     status: status,
                     timePeriod: timePeriod,
                     activityType: activityType,
@@ -520,7 +524,9 @@ final class WeekPlannerViewModel: ObservableObject {
                 newlyCompletedID = targetID
             }
         } else if let workoutIndex = weekPlan.days[dayIndex].workouts.firstIndex(where: {
-            $0.activityType.sessionKind == .run && $0.hasPlannedEnduranceDetail && !$0.hasCompletedEnduranceDetail
+            $0.activityType == run.activityType
+                && $0.hasPlannedEnduranceDetail
+                && !$0.hasCompletedEnduranceDetail
         }) {
             let priorStatus = weekPlan.days[dayIndex].workouts[workoutIndex].status
             WorkoutEditing.applyAttachedRun(run.detail, to: &weekPlan.days[dayIndex].workouts[workoutIndex])
@@ -529,12 +535,14 @@ final class WeekPlannerViewModel: ObservableObject {
                 newlyCompletedID = linkedWorkoutID
             }
         } else {
-            var workout = Workout.run(
+            var workout = Workout.manual(
+                activityType: run.activityType,
                 plannedDate: day,
-                title: run.detail.title.isEmpty ? "Run" : run.detail.title,
-                imported: true,
+                title: run.detail.title.isEmpty ? run.activityType.defaultTitle : run.detail.title,
                 notes: "Imported from HealthKit"
             )
+            workout.status = .imported
+            workout.source = .appleHealth
             WorkoutEditing.applyAttachedRun(run.detail, to: &workout)
             linkedWorkoutID = workout.id
             newlyCompletedID = workout.id
@@ -544,7 +552,7 @@ final class WeekPlannerViewModel: ObservableObject {
             recordImportedReference(
                 healthKitUUID: uuid,
                 linkedWorkoutId: linkedWorkoutID,
-                activityType: .roadRun,
+                activityType: run.activityType,
                 workoutStartDate: run.date
             )
         }
